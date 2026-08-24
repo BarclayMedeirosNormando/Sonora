@@ -3,11 +3,13 @@ class Track {
   final String id; // ID do arquivo no Drive
   final String title;
   final int sizeBytes;
+  final String? paiId; // ID da pasta-pai — só vem preenchido quando veio da árvore completa (navegação de pastas)
 
   const Track({
     required this.id,
     required this.title,
     this.sizeBytes = 0,
+    this.paiId,
   });
 
   factory Track.fromJson(Map<String, dynamic> json) {
@@ -15,6 +17,7 @@ class Track {
       id: json['id'] as String,
       title: json['name'] as String,
       sizeBytes: (json['size'] as num?)?.toInt() ?? 0,
+      paiId: json['paiId'] as String?,
     );
   }
 

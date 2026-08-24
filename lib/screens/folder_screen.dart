@@ -6,9 +6,10 @@ import '../core/theme.dart';
 import '../models/album.dart';
 import '../models/pasta_conteudo.dart';
 import '../models/track.dart';
-import '../services/api_service.dart';
+import '../services/download_service.dart';
 import '../services/favoritos_service.dart';
 import '../services/historico_service.dart';
+import '../services/library_cache_service.dart';
 import '../services/player_service.dart';
 import '../widgets/mini_player.dart';
 import 'favoritos_screen.dart';
@@ -34,12 +35,15 @@ class _FolderScreenState extends State<FolderScreen> {
   @override
   void initState() {
     super.initState();
-    _conteudoFuture = ApiService.navegarPasta(widget.folderId);
+    _conteudoFuture = LibraryCacheService.obterConteudoDaPasta(widget.folderId);
   }
 
   Future<void> _recarregar() async {
     setState(() {
-      _conteudoFuture = ApiService.navegarPasta(widget.folderId);
+      _conteudoFuture = LibraryCacheService.obterConteudoDaPasta(
+        widget.folderId,
+        forcarRecarga: true,
+      );
     });
     await _conteudoFuture;
   }
@@ -277,6 +281,9 @@ class _TrackTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final downloadService = context.watch<DownloadService>();
+    final status = downloadService.statusDe(track.id);
+
     return ListTile(
       leading: const Icon(Icons.music_note, color: AppTheme.textSecondary),
       title: Text(
@@ -292,6 +299,11 @@ class _TrackTile extends StatelessWidget {
             _tamanhoFormatado,
             style: const TextStyle(color: AppTheme.textSecondary, fontSize: 12),
           ),
+          _BotaoDownload(
+            track: track,
+            status: status,
+            progresso: downloadService.progressoDe(track.id),
+          ),
           IconButton(
             icon: const Icon(Icons.playlist_play, color: AppTheme.textSecondary),
             tooltip: 'Tocar a seguir',
@@ -306,5 +318,53 @@ class _TrackTile extends StatelessWidget {
       ),
       onTap: onTap,
     );
+  }
+}
+
+/// Botão de baixar/remover uma faixa pra ouvir offline. Mostra o estado
+/// certo conforme o download: nada baixado ainda, baixando (com
+/// progresso), já baixada (toque remove), ou erro (toque tenta de novo).
+class _BotaoDownload extends StatelessWidget {
+  final Track track;
+  final StatusDownload status;
+  final double? progresso;
+
+  const _BotaoDownload({required this.track, required this.status, this.progresso});
+
+  @override
+  Widget build(BuildContext context) {
+    switch (status) {
+      case StatusDownload.baixado:
+        return IconButton(
+          icon: const Icon(Icons.download_done, color: AppTheme.accent),
+          tooltip: 'Baixada — toque pra remover',
+          onPressed: () => context.read<DownloadService>().remover(track.id),
+        );
+      case StatusDownload.baixando:
+        final valor = (progresso != null && progresso! > 0) ? progresso : null;
+        return SizedBox(
+          width: 40,
+          height: 40,
+          child: Center(
+            child: SizedBox(
+              width: 18,
+              height: 18,
+              child: CircularProgressIndicator(strokeWidth: 2, value: valor),
+            ),
+          ),
+        );
+      case StatusDownload.erro:
+        return IconButton(
+          icon: const Icon(Icons.error_outline, color: Colors.redAccent),
+          tooltip: 'Erro ao baixar — toque pra tentar de novo',
+          onPressed: () => context.read<DownloadService>().baixar(track),
+        );
+      case StatusDownload.nenhum:
+        return IconButton(
+          icon: const Icon(Icons.download_outlined, color: AppTheme.textSecondary),
+          tooltip: 'Baixar pra ouvir offline',
+          onPressed: () => context.read<DownloadService>().baixar(track),
+        );
+    }
   }
 }

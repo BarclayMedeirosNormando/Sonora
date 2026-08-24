@@ -1,13 +1,18 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
-import '../core/constants.dart';
 import '../core/theme.dart';
 import '../services/api_service.dart';
 import '../services/device_id_service.dart';
-import 'folder_screen.dart';
+import 'home_screen.dart';
 
 /// Primeira tela do app: gera/mostra o App_ID do dispositivo e verifica
 /// se ele já foi liberado na planilha de controle de acesso.
+///
+/// Depois da primeira liberação bem-sucedida, guarda isso localmente pra
+/// não precisar mostrar essa tela de novo toda vez que o app abrir — só
+/// volta a pedir verificação manual se o acesso for revogado (percebido
+/// numa revalidação silenciosa em segundo plano).
 class ValidationScreen extends StatefulWidget {
   const ValidationScreen({super.key});
 
@@ -16,6 +21,8 @@ class ValidationScreen extends StatefulWidget {
 }
 
 class _ValidationScreenState extends State<ValidationScreen> {
+  static const _prefsKeyLiberado = 'sonora_liberado';
+
   String? _deviceId;
   bool _checking = false;
   String? _errorMessage;
@@ -23,13 +30,40 @@ class _ValidationScreenState extends State<ValidationScreen> {
   @override
   void initState() {
     super.initState();
-    _loadDeviceId();
+    _iniciar();
   }
 
-  Future<void> _loadDeviceId() async {
+  Future<void> _iniciar() async {
     final id = await DeviceIdService.getOrCreateDeviceId();
     if (!mounted) return;
     setState(() => _deviceId = id);
+
+    final prefs = await SharedPreferences.getInstance();
+    final jaLiberado = prefs.getBool(_prefsKeyLiberado) ?? false;
+    if (!jaLiberado) return;
+
+    if (!mounted) return;
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute(builder: (_) => const HomeScreen()),
+    );
+
+    // Revalida em segundo plano, sem travar quem já está usando o app — só
+    // se o acesso tiver sido revogado na planilha é que a PRÓXIMA abertura
+    // do app vai cair de novo na tela de verificação.
+    _revalidarEmSegundoPlano(id, prefs);
+  }
+
+  Future<void> _revalidarEmSegundoPlano(String id, SharedPreferences prefs) async {
+    try {
+      final aindaLiberado = await ApiService.validarId(id);
+      if (!aindaLiberado) {
+        await prefs.setBool(_prefsKeyLiberado, false);
+      }
+    } catch (_) {
+      // Sem internet ou backend fora do ar agora — mantém liberado
+      // localmente, não faz sentido bloquear quem já tinha sido aprovado
+      // só porque não deu pra confirmar de novo neste instante.
+    }
   }
 
   Future<void> _verificarLiberacao() async {
@@ -45,13 +79,12 @@ class _ValidationScreenState extends State<ValidationScreen> {
       if (!mounted) return;
 
       if (liberado) {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setBool(_prefsKeyLiberado, true);
+        if (!mounted) return;
+
         Navigator.of(context).pushReplacement(
-          MaterialPageRoute(
-            builder: (_) => const FolderScreen(
-              folderId: AppConstants.rootFolderId,
-              title: 'Sonora',
-            ),
-          ),
+          MaterialPageRoute(builder: (_) => const HomeScreen()),
         );
         return;
       }

@@ -5,11 +5,15 @@ class Album {
   final String id; // ID da pasta no Drive
   final String name; // Nome da pasta
   final String? capaId; // ID do arquivo de imagem de capa dentro da pasta (se houver)
+  final DateTime? criadoEm; // Só vem preenchido quando o Album veio do cache da biblioteca
+  final String? paiId; // ID da pasta-pai — só vem preenchido quando veio da árvore completa (navegação de pastas)
 
   const Album({
     required this.id,
     required this.name,
     this.capaId,
+    this.criadoEm,
+    this.paiId,
   });
 
   factory Album.fromJson(Map<String, dynamic> json) {
@@ -17,6 +21,10 @@ class Album {
       id: json['id'] as String,
       name: json['name'] as String,
       capaId: json['capaId'] as String?,
+      criadoEm: json['criadoEm'] != null
+          ? DateTime.tryParse(json['criadoEm'] as String)
+          : null,
+      paiId: json['paiId'] as String?,
     );
   }
 

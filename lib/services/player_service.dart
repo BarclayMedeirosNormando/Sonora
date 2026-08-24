@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../core/constants.dart';
 import '../models/track.dart';
+import 'download_service.dart';
 
 /// Estado e controle da reprodução: fila de faixas, play/pause, avançar/
 /// voltar, reordenar fila, "tocar a seguir", sleep timer e restaurar de
@@ -16,6 +17,7 @@ class PlayerService extends ChangeNotifier with WidgetsBindingObserver {
 
   final AudioPlayer _player = AudioPlayer();
   ConcatenatingAudioSource? _playlist;
+  final DownloadService? _downloadService;
 
   final List<Track> _fila = [];
   int _indiceAtual = -1;
@@ -23,7 +25,8 @@ class PlayerService extends ChangeNotifier with WidgetsBindingObserver {
   Timer? _sleepTimer;
   DateTime? _sleepFimEm;
 
-  PlayerService() {
+  PlayerService({DownloadService? downloadService})
+      : _downloadService = downloadService {
     WidgetsBinding.instance.addObserver(this);
 
     _player.playerStateStream.listen((_) => notifyListeners());
@@ -57,6 +60,17 @@ class PlayerService extends ChangeNotifier with WidgetsBindingObserver {
   Duration? get sleepRestante =>
       _sleepFimEm == null ? null : _sleepFimEm!.difference(DateTime.now());
 
+  /// Fonte de áudio pra uma faixa: usa o arquivo já baixado no aparelho
+  /// (ouvir offline) quando existir, senão cai pro streaming direto do
+  /// Drive de sempre.
+  AudioSource _fonteDe(Track track) {
+    final local = _downloadService?.caminhoLocal(track.id);
+    if (local != null) {
+      return AudioSource.uri(Uri.file(local));
+    }
+    return AudioSource.uri(Uri.parse(track.streamUrl(AppConstants.driveApiKey)));
+  }
+
   /// Começa a tocar uma fila de faixas a partir de um índice (ex: as faixas
   /// da pasta atual, começando na que o usuário tocou).
   Future<void> tocarFila(List<Track> faixas, int indiceInicial) async {
@@ -67,9 +81,7 @@ class PlayerService extends ChangeNotifier with WidgetsBindingObserver {
     notifyListeners();
 
     _playlist = ConcatenatingAudioSource(
-      children: faixas
-          .map((f) => AudioSource.uri(Uri.parse(f.streamUrl(AppConstants.driveApiKey))))
-          .toList(),
+      children: faixas.map(_fonteDe).toList(),
     );
 
     await _player.setAudioSource(_playlist!, initialIndex: indiceInicial);
@@ -165,10 +177,7 @@ class PlayerService extends ChangeNotifier with WidgetsBindingObserver {
     }
 
     final posicaoInsercao = _indiceAtual + 1;
-    await _playlist!.insert(
-      posicaoInsercao,
-      AudioSource.uri(Uri.parse(track.streamUrl(AppConstants.driveApiKey))),
-    );
+    await _playlist!.insert(posicaoInsercao, _fonteDe(track));
     _fila.insert(posicaoInsercao, track);
     notifyListeners();
     _salvarEstado();
@@ -214,8 +223,8 @@ class PlayerService extends ChangeNotifier with WidgetsBindingObserver {
   /// Carrega a fila/posição salvas e deixa pronto pra continuar — sem
   /// iniciar a reprodução sozinho, só quando o usuário apertar play.
   Future<void> _restaurarEstado() async {
+    final prefs = await SharedPreferences.getInstance();
     try {
-      final prefs = await SharedPreferences.getInstance();
       final bruto = prefs.getString(_prefsKeyEstado);
       if (bruto == null) return;
 
@@ -228,25 +237,40 @@ class PlayerService extends ChangeNotifier with WidgetsBindingObserver {
 
       if (listaFaixas.isEmpty || indice < 0 || indice >= listaFaixas.length) return;
 
+      // Só mexe no estado do player (fila, playlist) depois que o
+      // setAudioSource realmente funcionar — se a faixa salva não carregar
+      // (arquivo removido, soluço de rede no início do app), não queremos
+      // deixar _fila/_playlist preenchidos com algo que o player não tem
+      // de verdade, porque isso pode travar tentativas de tocar algo novo
+      // depois.
+      final playlistRestaurada = ConcatenatingAudioSource(
+        children: listaFaixas.map(_fonteDe).toList(),
+      );
+
+      await _player.setAudioSource(
+        playlistRestaurada,
+        initialIndex: indice,
+        initialPosition: Duration(milliseconds: posicaoMs),
+      );
+
       _fila
         ..clear()
         ..addAll(listaFaixas);
       _indiceAtual = indice;
-
-      _playlist = ConcatenatingAudioSource(
-        children: listaFaixas
-            .map((f) => AudioSource.uri(Uri.parse(f.streamUrl(AppConstants.driveApiKey))))
-            .toList(),
-      );
-
-      await _player.setAudioSource(
-        _playlist!,
-        initialIndex: indice,
-        initialPosition: Duration(milliseconds: posicaoMs),
-      );
+      _playlist = playlistRestaurada;
       notifyListeners();
     } catch (_) {
-      // Estado salvo inválido/corrompido — ignora e começa do zero.
+      // Estado salvo inválido, ou a faixa não carregou (arquivo removido,
+      // rede instável no início do app). Limpa o estado salvo pra não
+      // ficar tentando restaurar a mesma coisa quebrada toda vez que o
+      // app abrir, e garante que o player fique livre pra tocar qualquer
+      // coisa nova sem carregar bagagem de uma restauração que falhou.
+      await prefs.remove(_prefsKeyEstado);
+      try {
+        await _player.stop();
+      } catch (_) {
+        // Se nem o stop funcionar, não tem mais nada a fazer aqui.
+      }
     }
   }
 

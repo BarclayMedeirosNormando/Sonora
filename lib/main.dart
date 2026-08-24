@@ -3,15 +3,34 @@ import 'package:provider/provider.dart';
 
 import 'core/theme.dart';
 import 'screens/validation_screen.dart';
+import 'services/download_service.dart';
 import 'services/favoritos_service.dart';
 import 'services/historico_service.dart';
 import 'services/player_service.dart';
 
-void main() {
+void main() async {
+  // Precisa estar pronto antes de usar SharedPreferences/plugins abaixo,
+  // já que main() agora faz await antes do runApp().
+  WidgetsFlutterBinding.ensureInitialized();
+
+  // Criado antes do MultiProvider pra poder ser injetado tanto no próprio
+  // Provider (telas usam context.watch/read normalmente) quanto direto no
+  // construtor do PlayerService (que não tem acesso a context). Esperamos
+  // o carregamento do mapa de downloads terminar ANTES do runApp() pra
+  // garantir que o PlayerService, ao restaurar o estado salvo, já enxergue
+  // corretamente quais faixas estão baixadas (sem essa espera, dava pra
+  // cair numa corrida em que o player achava que uma faixa baixada ainda
+  // não tinha download e tentava tocar via streaming, mesmo offline).
+  final downloadService = DownloadService();
+  await downloadService.inicializar();
+
   runApp(
     MultiProvider(
       providers: [
-        ChangeNotifierProvider(create: (_) => PlayerService()),
+        ChangeNotifierProvider.value(value: downloadService),
+        ChangeNotifierProvider(
+          create: (_) => PlayerService(downloadService: downloadService),
+        ),
         ChangeNotifierProvider(create: (_) => FavoritosService()),
         ChangeNotifierProvider(create: (_) => HistoricoService()),
       ],

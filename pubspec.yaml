@@ -1,7 +1,7 @@
 name: sonora
 description: "Sonora - player de música com backend no Google Drive"
 publish_to: 'none'
-version: 0.0.1+1
+version: 1.0.0+7
 
 environment:
   sdk: '>=3.3.0 <4.0.0'
@@ -29,10 +29,59 @@ dependencies:
   # Gerenciamento de estado
   provider: ^6.1.2
 
+  # Pasta local do app pra guardar mp3 baixados (ouvir offline)
+  path_provider: ^2.1.4
+
+  # Abrir o WhatsApp com mensagem pronta (tela "Pedir música")
+  url_launcher: ^6.3.1
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^4.0.0
 
+  # Geração do ícone do app a partir de assets/icon/sonora_logo.png
+  flutter_launcher_icons: ^0.14.3
+
+  # Geração da splash screen a partir da mesma logo
+  flutter_native_splash: ^2.4.6
+
 flutter:
   uses-material-design: true
+  assets:
+    - assets/icon/
+
+# Config do flutter_launcher_icons — rodar com: flutter pub run flutter_launcher_icons
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: "assets/icon/sonora_logo.png"
+  # Sem adaptive_icon_foreground porque a logo não tem versão com fundo
+  # transparente — se separar símbolo e fundo depois, dá pra ativar o
+  # adaptive icon "de verdade" (Android recorta o foreground numa safe
+  # zone menor que a imagem toda, e isso cortaria a logo do jeito que
+  # está agora).
+  web:
+    generate: true
+    image_path: "assets/icon/sonora_logo.png"
+    background_color: "#191F24"
+    theme_color: "#191F24"
+  windows:
+    generate: true
+    image_path: "assets/icon/sonora_logo.png"
+  macos:
+    generate: true
+    image_path: "assets/icon/sonora_logo.png"
+
+# Config do flutter_native_splash — rodar com: flutter pub run flutter_native_splash:create
+flutter_native_splash:
+  color: "#191F24"
+  image: assets/icon/sonora_logo.png
+  color_dark: "#191F24"
+  image_dark: assets/icon/sonora_logo.png
+  android_12:
+    color: "#191F24"
+    image: assets/icon/sonora_logo.png
+    color_dark: "#191F24"
+    image_dark: assets/icon/sonora_logo.png
+  web: false
