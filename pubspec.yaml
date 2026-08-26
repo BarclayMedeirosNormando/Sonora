@@ -35,6 +35,9 @@ dependencies:
   # Abrir o WhatsApp com mensagem pronta (tela "Pedir música")
   url_launcher: ^6.3.1
 
+  # Tipografia (Poppins) pra dar cara mais profissional de app de musica
+  google_fonts: ^6.2.1
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

@@ -121,6 +121,21 @@ class LibraryCacheService {
   /// se já tiver disponível (ex: Home não precisa aguardar carregamento).
   static List<Album>? get albunsSincronos => _albunsEmCache;
 
+  /// Álbum (pasta) correspondente a [id], procurado no cache já carregado
+  /// em memória — usado pra achar a capa da pasta que contém a faixa que
+  /// está tocando agora (Track só guarda paiId, não capaId). Retorna null
+  /// se o cache ainda não carregou ou se a pasta não aparecer na árvore
+  /// (ex: ela é a própria pasta raiz).
+  static Album? albumPorId(String id) {
+    for (final album in _arvorePastasEmCache ?? const <Album>[]) {
+      if (album.id == id) return album;
+    }
+    for (final album in _albunsEmCache ?? const <Album>[]) {
+      if (album.id == id) return album;
+    }
+    return null;
+  }
+
   /// Ordenação "natural" (números dentro do nome comparados como número,
   /// não caractere por caractere) — pra "Faixa 2" vir antes de "Faixa 10",
   /// igual o comportamento que o Apps Script tinha com localeCompare

@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:provider/provider.dart';
 
+import '../core/constants.dart';
 import '../core/theme.dart';
+import '../services/library_cache_service.dart';
 import '../services/player_service.dart';
 import 'fila_screen.dart';
 
@@ -90,14 +92,46 @@ class PlayerScreen extends StatelessWidget {
                 child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Container(
-                  width: 220,
-                  height: 220,
-                  decoration: BoxDecoration(
-                    color: AppTheme.surfaceHigh,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: const Icon(Icons.album, size: 96, color: AppTheme.textSecondary),
+                Builder(
+                  builder: (context) {
+                    final album = faixa.paiId != null
+                        ? LibraryCacheService.albumPorId(faixa.paiId!)
+                        : null;
+                    final capaUrl = album?.capaUrl(AppConstants.driveApiKey);
+                    const placeholder = Center(
+                      child: Icon(Icons.album, size: 96, color: AppTheme.textSecondary),
+                    );
+
+                    return Container(
+                      width: 220,
+                      height: 220,
+                      decoration: BoxDecoration(
+                        color: AppTheme.surfaceHigh,
+                        borderRadius: BorderRadius.circular(12),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.4),
+                            blurRadius: 24,
+                            offset: const Offset(0, 12),
+                          ),
+                        ],
+                      ),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(12),
+                        child: capaUrl != null
+                            ? Image.network(
+                                capaUrl,
+                                fit: BoxFit.cover,
+                                loadingBuilder: (context, child, progress) {
+                                  if (progress == null) return child;
+                                  return placeholder;
+                                },
+                                errorBuilder: (context, error, stackTrace) => placeholder,
+                              )
+                            : placeholder,
+                      ),
+                    );
+                  },
                 ),
                 const SizedBox(height: 32),
                 Text(
