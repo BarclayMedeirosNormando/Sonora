@@ -38,6 +38,9 @@ dependencies:
   # Tipografia (Poppins) pra dar cara mais profissional de app de musica
   google_fonts: ^6.2.1
 
+  # Efeito de "esqueleto" pulsante enquanto pastas/albuns carregam
+  shimmer: ^3.0.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

@@ -1,12 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../core/constants.dart';
 import '../core/theme.dart';
 import '../screens/player_screen.dart';
+import '../services/library_cache_service.dart';
 import '../services/player_service.dart';
 
 /// Barra fixa na parte inferior das telas com a faixa atual e play/pause.
-/// Tem uma barrinha fina de progresso no topo, igual Spotify/Apple Music.
+/// Tem uma barrinha fina de progresso no topo, igual Spotify/Apple Music,
+/// e a miniatura da capa (com Hero animation pra tela cheia do player).
 /// Some sozinha quando não há nada tocando.
 class MiniPlayer extends StatelessWidget {
   const MiniPlayer({super.key});
@@ -17,6 +20,10 @@ class MiniPlayer extends StatelessWidget {
       builder: (context, player, _) {
         final faixa = player.faixaAtual;
         if (faixa == null) return const SizedBox.shrink();
+
+        final album =
+            faixa.paiId != null ? LibraryCacheService.albumPorId(faixa.paiId!) : null;
+        final capaUrl = album?.capaUrl(AppConstants.driveApiKey);
 
         return InkWell(
           onTap: () {
@@ -52,7 +59,24 @@ class MiniPlayer extends StatelessWidget {
                     padding: const EdgeInsets.symmetric(horizontal: 16),
                     child: Row(
                       children: [
-                        const Icon(Icons.music_note, color: AppTheme.textSecondary),
+                        Hero(
+                          tag: 'capa-${faixa.id}',
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(4),
+                            child: SizedBox(
+                              width: 40,
+                              height: 40,
+                              child: capaUrl != null
+                                  ? Image.network(
+                                      capaUrl,
+                                      fit: BoxFit.cover,
+                                      errorBuilder: (context, error, stackTrace) =>
+                                          const _MiniCapaPlaceholder(),
+                                    )
+                                  : const _MiniCapaPlaceholder(),
+                            ),
+                          ),
+                        ),
                         const SizedBox(width: 12),
                         Expanded(
                           child: Text(
@@ -78,6 +102,18 @@ class MiniPlayer extends StatelessWidget {
           ),
         );
       },
+    );
+  }
+}
+
+class _MiniCapaPlaceholder extends StatelessWidget {
+  const _MiniCapaPlaceholder();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      color: AppTheme.surfaceHigh,
+      child: const Icon(Icons.music_note, color: AppTheme.textSecondary, size: 20),
     );
   }
 }

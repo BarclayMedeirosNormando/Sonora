@@ -11,6 +11,7 @@ import '../services/favoritos_service.dart';
 import '../services/historico_service.dart';
 import '../services/library_cache_service.dart';
 import '../services/player_service.dart';
+import '../widgets/album_skeleton.dart';
 import '../widgets/mini_player.dart';
 import 'favoritos_screen.dart';
 import 'historico_screen.dart';
@@ -88,7 +89,7 @@ class _FolderScreenState extends State<FolderScreen> {
                 future: _conteudoFuture,
                 builder: (context, snapshot) {
                   if (snapshot.connectionState == ConnectionState.waiting) {
-                    return const Center(child: CircularProgressIndicator());
+                    return const AlbumGridSkeleton();
                   }
 
                   if (snapshot.hasError) {

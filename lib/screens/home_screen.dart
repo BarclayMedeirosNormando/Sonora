@@ -8,6 +8,7 @@ import '../services/favoritos_service.dart';
 import '../services/historico_service.dart';
 import '../services/library_cache_service.dart';
 import '../services/player_service.dart';
+import '../widgets/album_skeleton.dart';
 import '../widgets/mini_player.dart';
 import 'downloads_screen.dart';
 import 'favoritos_screen.dart';
@@ -250,19 +251,12 @@ class _SecaoAlbuns extends StatelessWidget {
       builder: (context, snapshot) {
         final albuns = (snapshot.data ?? []).take(_maxItens).toList();
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return Padding(
-            padding: const EdgeInsets.fromLTRB(16, 20, 16, 0),
-            child: Row(
-              children: [
-                const SizedBox(
-                  width: 16,
-                  height: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                ),
-                const SizedBox(width: 12),
-                Text(titulo, style: const TextStyle(color: AppTheme.textSecondary)),
-              ],
-            ),
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _TituloSecao(titulo),
+              const AlbumRowSkeleton(quantidade: 5),
+            ],
           );
         }
 

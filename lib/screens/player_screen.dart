@@ -72,7 +72,15 @@ class PlayerScreen extends StatelessWidget {
           ),
         ],
       ),
-      body: Consumer<PlayerService>(
+      body: Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            colors: [AppTheme.surfaceHigh, AppTheme.background],
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+          ),
+        ),
+        child: Consumer<PlayerService>(
         builder: (context, player, _) {
           final faixa = player.faixaAtual;
           if (faixa == null) {
@@ -102,7 +110,9 @@ class PlayerScreen extends StatelessWidget {
                       child: Icon(Icons.album, size: 96, color: AppTheme.textSecondary),
                     );
 
-                    return Container(
+                    return Hero(
+                      tag: 'capa-${faixa.id}',
+                      child: Container(
                       width: 220,
                       height: 220,
                       decoration: BoxDecoration(
@@ -130,7 +140,7 @@ class PlayerScreen extends StatelessWidget {
                               )
                             : placeholder,
                       ),
-                    );
+                    ));
                   },
                 ),
                 const SizedBox(height: 32),
@@ -270,6 +280,7 @@ class PlayerScreen extends StatelessWidget {
             ),
           );
         },
+        ),
       ),
     );
   }
