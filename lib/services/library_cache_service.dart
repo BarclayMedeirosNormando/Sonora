@@ -1,24 +1,37 @@
+import 'dart:async';
+import 'dart:convert';
+
+import 'package:shared_preferences/shared_preferences.dart';
+
 import '../models/album.dart';
 import '../models/pasta_conteudo.dart';
 import '../models/track.dart';
 import 'api_service.dart';
 
 /// Lê o cache pré-computado da biblioteca inteira (gerado pelo script
-/// backend/CacheBiblioteca.gs) através do Web App (action=cache, ver
-/// ApiService.obterCacheBiblioteca) — mudou de buscar direto do Drive via
-/// API key (27/08/2026) porque o endpoint alt=media do Drive não garante
-/// CORS de forma confiável quando chamado de um navegador (Flutter Web).
-/// Usado pela Home ("adicionados recentemente"), pela Busca e também pela
-/// navegação de pastas (FolderScreen) — que antes chamava o Apps Script a
-/// cada pasta aberta e podia esbarrar no limite de 30 execuções
-/// simultâneas do script com muita gente navegando ao mesmo tempo; agora
-/// só esse fetch do cache passa pelo Web App (uma vez, guardado em
-/// memória) — a navegação pasta-a-pasta em si não chama o Apps Script.
+/// backend/CacheBiblioteca.gs, servido via ApiService.obterCacheBiblioteca
+/// — direto do Drive fora da Web, via Apps Script na Web por causa de
+/// CORS).
 ///
-/// Guarda tudo em memória durante a sessão do app; use forcarRecarga pra
-/// puxar de novo (ex: pull-to-refresh).
+/// Usado pela Home ("adicionados recentemente"), pela Busca e também pela
+/// navegação de pastas (FolderScreen) — a navegação pasta-a-pasta em si
+/// não chama nada de rede, só filtra o que já está aqui.
+///
+/// Guarda tudo em memória durante a sessão do app, e também persiste no
+/// aparelho (SharedPreferences) entre aberturas (28/08/2026): ao abrir o
+/// app, mostra IMEDIATAMENTE o que já tinha salvo da última vez (sem
+/// esperar rede nenhuma) e, se esse salvo estiver "velho" (mais de
+/// [_ttlCache]), busca uma versão nova em segundo plano sem travar quem já
+/// está vendo os dados salvos. Isso reduz bastante a frequência de
+/// chamadas ao backend — a maioria das aberturas do app nem precisa de
+/// rede pra mostrar a biblioteca. Use forcarRecarga pra pular tudo isso e
+/// buscar na hora (ex: pull-to-refresh).
 class LibraryCacheService {
   LibraryCacheService._();
+
+  static const _prefsKeyCacheJson = 'sonora_cache_biblioteca_json';
+  static const _prefsKeyCacheEm = 'sonora_cache_biblioteca_salvo_em';
+  static const _ttlCache = Duration(hours: 1);
 
   static List<Album>? _albunsEmCache;
   static List<Album>? _arvorePastasEmCache;
@@ -63,7 +76,7 @@ class LibraryCacheService {
       return;
     }
 
-    final future = _carregar();
+    final future = _carregar(forcarRecarga: forcarRecarga);
     _carregandoEmAndamento = future;
     try {
       await future;
@@ -72,9 +85,52 @@ class LibraryCacheService {
     }
   }
 
-  static Future<void> _carregar() async {
-    final body = await ApiService.obterCacheBiblioteca();
+  static Future<void> _carregar({required bool forcarRecarga}) async {
+    final prefs = await SharedPreferences.getInstance();
 
+    if (!forcarRecarga) {
+      final jsonSalvo = prefs.getString(_prefsKeyCacheJson);
+      if (jsonSalvo != null) {
+        // Mostra o que já tinha salvo no aparelho na hora, sem esperar rede.
+        _aplicarBody(jsonDecode(jsonSalvo) as Map<String, dynamic>);
+
+        final salvoEmMs = prefs.getInt(_prefsKeyCacheEm);
+        final salvoEm = salvoEmMs != null
+            ? DateTime.fromMillisecondsSinceEpoch(salvoEmMs)
+            : null;
+        final estaFresco =
+            salvoEm != null && DateTime.now().difference(salvoEm) < _ttlCache;
+        if (estaFresco) return;
+
+        // Salvo existe mas já passou do prazo: atualiza em segundo plano,
+        // sem travar quem já está vendo os dados salvos — a próxima tela
+        // ou reabertura do app já pega a versão nova.
+        unawaited(_buscarDaRedeEAtualizar(prefs));
+        return;
+      }
+    }
+
+    // Primeira vez (nunca salvou nada localmente) ou recarga forçada
+    // (pull-to-refresh): precisa esperar a rede.
+    await _buscarDaRedeEAtualizar(prefs);
+  }
+
+  static Future<void> _buscarDaRedeEAtualizar(SharedPreferences prefs) async {
+    try {
+      final body = await ApiService.obterCacheBiblioteca();
+      _aplicarBody(body);
+      await prefs.setString(_prefsKeyCacheJson, jsonEncode(body));
+      await prefs.setInt(_prefsKeyCacheEm, DateTime.now().millisecondsSinceEpoch);
+    } catch (_) {
+      // Se já tinha algo carregado (da própria memória ou de um cache
+      // salvo lido agora há pouco), o app continua funcionando com aquilo
+      // — só relança o erro se não tinha NADA pra mostrar ainda (primeira
+      // vez, sem cache salvo e sem internet/backend disponível).
+      if (_albunsEmCache == null) rethrow;
+    }
+  }
+
+  static void _aplicarBody(Map<String, dynamic> body) {
     final albunsJson = body['albuns'] as List<dynamic>? ?? [];
     _albunsEmCache = albunsJson
         .map((a) => Album.fromJson(a as Map<String, dynamic>))
