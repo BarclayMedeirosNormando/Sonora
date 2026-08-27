@@ -4,7 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../core/theme.dart';
 import '../services/api_service.dart';
 import '../services/device_id_service.dart';
-import 'home_screen.dart';
+import 'main_screen.dart';
 
 /// Primeira tela do app: gera/mostra o App_ID do dispositivo e verifica
 /// se ele já foi liberado na planilha de controle de acesso.
@@ -44,7 +44,7 @@ class _ValidationScreenState extends State<ValidationScreen> {
 
     if (!mounted) return;
     Navigator.of(context).pushReplacement(
-      MaterialPageRoute(builder: (_) => const HomeScreen()),
+      MaterialPageRoute(builder: (_) => const MainScreen()),
     );
 
     // Revalida em segundo plano, sem travar quem já está usando o app — só
@@ -84,7 +84,7 @@ class _ValidationScreenState extends State<ValidationScreen> {
         if (!mounted) return;
 
         Navigator.of(context).pushReplacement(
-          MaterialPageRoute(builder: (_) => const HomeScreen()),
+          MaterialPageRoute(builder: (_) => const MainScreen()),
         );
         return;
       }

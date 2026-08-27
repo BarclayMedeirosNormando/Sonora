@@ -13,6 +13,7 @@ import '../services/library_cache_service.dart';
 import '../services/player_service.dart';
 import '../widgets/album_skeleton.dart';
 import '../widgets/mini_player.dart';
+import 'downloads_screen.dart';
 import 'favoritos_screen.dart';
 import 'historico_screen.dart';
 
@@ -23,8 +24,17 @@ import 'historico_screen.dart';
 class FolderScreen extends StatefulWidget {
   final String folderId;
   final String title;
+  /// false quando essa tela é o conteúdo de uma aba (a casca com abas já
+  /// mostra o mini-player por cima da barra) — true (padrão) quando é uma
+  /// tela cheia normal, empilhada por cima de tudo via Navigator.push.
+  final bool mostrarMiniPlayer;
 
-  const FolderScreen({super.key, required this.folderId, required this.title});
+  const FolderScreen({
+    super.key,
+    required this.folderId,
+    required this.title,
+    this.mostrarMiniPlayer = true,
+  });
 
   @override
   State<FolderScreen> createState() => _FolderScreenState();
@@ -75,6 +85,15 @@ class _FolderScreenState extends State<FolderScreen> {
             onPressed: () {
               Navigator.of(context).push(
                 MaterialPageRoute(builder: (_) => const FavoritosScreen()),
+              );
+            },
+          ),
+          IconButton(
+            icon: const Icon(Icons.download_done),
+            tooltip: 'Baixadas (offline)',
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const DownloadsScreen()),
               );
             },
           ),
@@ -145,7 +164,7 @@ class _FolderScreenState extends State<FolderScreen> {
               ),
             ),
           ),
-          const MiniPlayer(),
+          if (widget.mostrarMiniPlayer) const MiniPlayer(),
         ],
       ),
     );

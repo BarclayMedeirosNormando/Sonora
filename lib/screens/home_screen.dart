@@ -9,14 +9,9 @@ import '../services/historico_service.dart';
 import '../services/library_cache_service.dart';
 import '../services/player_service.dart';
 import '../widgets/album_skeleton.dart';
-import '../widgets/mini_player.dart';
-import 'downloads_screen.dart';
-import 'favoritos_screen.dart';
 import 'folder_screen.dart';
-import 'historico_screen.dart';
 import 'pedido_screen.dart';
 import 'player_screen.dart';
-import 'search_screen.dart';
 
 /// Tela inicial do app: continuar ouvindo, adicionados recentemente e
 /// favoritos, tudo num só lugar — em vez de cair direto na lista crua de
@@ -49,101 +44,36 @@ class _HomeScreenState extends State<HomeScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Sonora'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.search),
-            tooltip: 'Buscar',
-            onPressed: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const SearchScreen()),
-              );
-            },
-          ),
-          IconButton(
-            icon: const Icon(Icons.history),
-            tooltip: 'Histórico',
-            onPressed: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const HistoricoScreen()),
-              );
-            },
-          ),
-          IconButton(
-            icon: const Icon(Icons.star),
-            tooltip: 'Favoritos',
-            onPressed: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const FavoritosScreen()),
-              );
-            },
-          ),
-          IconButton(
-            icon: const Icon(Icons.download_done),
-            tooltip: 'Baixadas (offline)',
-            onPressed: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const DownloadsScreen()),
-              );
-            },
-          ),
-        ],
       ),
-      body: Column(
-        children: [
-          Expanded(
-            child: RefreshIndicator(
-              onRefresh: _recarregar,
-              child: ListView(
-                physics: const AlwaysScrollableScrollPhysics(),
-                padding: const EdgeInsets.only(bottom: 16),
-                children: [
-                  const _ContinuarOuvindo(),
-                  _SecaoAlbuns(
-                    titulo: 'Adicionados recentemente',
-                    future: _recentesFuture,
-                  ),
-                  const _SecaoFavoritos(),
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-                    child: OutlinedButton.icon(
-                      icon: const Icon(Icons.library_music, color: AppTheme.accent),
-                      label: const Text(
-                        'Ver toda a biblioteca',
-                        style: TextStyle(color: AppTheme.textPrimary),
-                      ),
-                      onPressed: () {
-                        Navigator.of(context).push(
-                          MaterialPageRoute(
-                            builder: (_) => const FolderScreen(
-                              folderId: AppConstants.rootFolderId,
-                              title: 'Sonora',
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-                    child: OutlinedButton.icon(
-                      icon: const Icon(Icons.chat_outlined, color: AppTheme.accent),
-                      label: const Text(
-                        'Pedir música ou álbum',
-                        style: TextStyle(color: AppTheme.textPrimary),
-                      ),
-                      onPressed: () {
-                        Navigator.of(context).push(
-                          MaterialPageRoute(builder: (_) => const PedidoScreen()),
-                        );
-                      },
-                    ),
-                  ),
-                ],
+      body: RefreshIndicator(
+        onRefresh: _recarregar,
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.only(bottom: 16),
+          children: [
+            const _ContinuarOuvindo(),
+            _SecaoAlbuns(
+              titulo: 'Adicionados recentemente',
+              future: _recentesFuture,
+            ),
+            const _SecaoFavoritos(),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+              child: OutlinedButton.icon(
+                icon: const Icon(Icons.chat_outlined, color: AppTheme.accent),
+                label: const Text(
+                  'Pedir música ou álbum',
+                  style: TextStyle(color: AppTheme.textPrimary),
+                ),
+                onPressed: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const PedidoScreen()),
+                  );
+                },
               ),
             ),
-          ),
-          const MiniPlayer(),
-        ],
+          ],
+        ),
       ),
     );
   }
