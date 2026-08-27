@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -67,10 +68,12 @@ class MiniPlayer extends StatelessWidget {
                               width: 40,
                               height: 40,
                               child: capaUrl != null
-                                  ? Image.network(
-                                      capaUrl,
+                                  ? CachedNetworkImage(
+                                      imageUrl: capaUrl,
                                       fit: BoxFit.cover,
-                                      errorBuilder: (context, error, stackTrace) =>
+                                      memCacheWidth: 80,
+                                      placeholder: (context, url) => const _MiniCapaPlaceholder(),
+                                      errorWidget: (context, url, error) =>
                                           const _MiniCapaPlaceholder(),
                                     )
                                   : const _MiniCapaPlaceholder(),

@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:provider/provider.dart';
@@ -129,14 +130,12 @@ class PlayerScreen extends StatelessWidget {
                       child: ClipRRect(
                         borderRadius: BorderRadius.circular(12),
                         child: capaUrl != null
-                            ? Image.network(
-                                capaUrl,
+                            ? CachedNetworkImage(
+                                imageUrl: capaUrl,
                                 fit: BoxFit.cover,
-                                loadingBuilder: (context, child, progress) {
-                                  if (progress == null) return child;
-                                  return placeholder;
-                                },
-                                errorBuilder: (context, error, stackTrace) => placeholder,
+                                memCacheWidth: 440,
+                                placeholder: (context, url) => placeholder,
+                                errorWidget: (context, url, error) => placeholder,
                               )
                             : placeholder,
                       ),

@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 
 import '../core/constants.dart';
@@ -163,10 +164,15 @@ class _ResultadoTile extends StatelessWidget {
           width: 48,
           height: 48,
           child: capaUrl != null
-              ? Image.network(
-                  capaUrl,
+              ? CachedNetworkImage(
+                  imageUrl: capaUrl,
                   fit: BoxFit.cover,
-                  errorBuilder: (context, error, stackTrace) => Container(
+                  memCacheWidth: 96,
+                  placeholder: (context, url) => Container(
+                    color: AppTheme.surfaceHigh,
+                    child: const Icon(Icons.folder, color: AppTheme.accent, size: 20),
+                  ),
+                  errorWidget: (context, url, error) => Container(
                     color: AppTheme.surfaceHigh,
                     child: const Icon(Icons.folder, color: AppTheme.accent, size: 20),
                   ),

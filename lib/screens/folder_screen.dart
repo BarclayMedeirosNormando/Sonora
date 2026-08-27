@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -237,15 +238,12 @@ class _PastaCard extends StatelessWidget {
                 ClipRRect(
                   borderRadius: BorderRadius.circular(8),
                   child: capaUrl != null
-                      ? Image.network(
-                          capaUrl,
+                      ? CachedNetworkImage(
+                          imageUrl: capaUrl,
                           fit: BoxFit.cover,
-                          loadingBuilder: (context, child, progress) {
-                            if (progress == null) return child;
-                            return const _CapaPlaceholder();
-                          },
-                          errorBuilder: (context, error, stackTrace) =>
-                              const _CapaPlaceholder(),
+                          memCacheWidth: 280,
+                          placeholder: (context, url) => const _CapaPlaceholder(),
+                          errorWidget: (context, url, error) => const _CapaPlaceholder(),
                         )
                       : const _CapaPlaceholder(),
                 ),

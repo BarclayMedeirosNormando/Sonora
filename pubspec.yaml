@@ -41,6 +41,10 @@ dependencies:
   # Efeito de "esqueleto" pulsante enquanto pastas/albuns carregam
   shimmer: ^3.0.0
 
+  # Cache em disco pras capas de album — evita rebaixar do Drive toda vez
+  # que reabre uma pasta ja vista (ou reabre o app)
+  cached_network_image: ^3.4.1
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
