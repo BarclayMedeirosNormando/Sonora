@@ -36,6 +36,12 @@ class _SearchScreenState extends State<SearchScreen> {
     super.dispose();
   }
 
+  void _recarregar() {
+    setState(() {
+      _todosFuture = LibraryCacheService.obterAlbuns(forcarRecarga: true);
+    });
+  }
+
   /// Normaliza pra busca sem se importar com acento/maiúscula
   /// ("robeRTO" e "roberto" e "róbèrto" batem igual).
   String _normalizar(String texto) {
@@ -75,10 +81,20 @@ class _SearchScreenState extends State<SearchScreen> {
             return Center(
               child: Padding(
                 padding: const EdgeInsets.all(24),
-                child: Text(
-                  'Não deu pra carregar a busca.\n${snapshot.error}',
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(color: AppTheme.textSecondary),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      'Não deu pra carregar a busca.\n${snapshot.error}',
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(color: AppTheme.textSecondary),
+                    ),
+                    const SizedBox(height: 16),
+                    OutlinedButton(
+                      onPressed: _recarregar,
+                      child: const Text('Tentar de novo'),
+                    ),
+                  ],
                 ),
               ),
             );

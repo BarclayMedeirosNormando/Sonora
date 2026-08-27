@@ -113,7 +113,9 @@ class _FolderScreenState extends State<FolderScreen> {
 
                   if (snapshot.hasError) {
                     return _mensagem(
-                        'Não deu pra carregar essa pasta.\n${snapshot.error}');
+                      'Não deu pra carregar essa pasta.\n${snapshot.error}',
+                      onTentarDeNovo: _recarregar,
+                    );
                   }
 
                   final conteudo = snapshot.data;
@@ -170,7 +172,7 @@ class _FolderScreenState extends State<FolderScreen> {
     );
   }
 
-  Widget _mensagem(String texto) {
+  Widget _mensagem(String texto, {VoidCallback? onTentarDeNovo}) {
     return LayoutBuilder(
       builder: (context, constraints) => SingleChildScrollView(
         physics: const AlwaysScrollableScrollPhysics(),
@@ -179,10 +181,22 @@ class _FolderScreenState extends State<FolderScreen> {
           child: Center(
             child: Padding(
               padding: const EdgeInsets.all(24),
-              child: Text(
-                texto,
-                textAlign: TextAlign.center,
-                style: const TextStyle(color: AppTheme.textSecondary),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    texto,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(color: AppTheme.textSecondary),
+                  ),
+                  if (onTentarDeNovo != null) ...[
+                    const SizedBox(height: 16),
+                    OutlinedButton(
+                      onPressed: onTentarDeNovo,
+                      child: const Text('Tentar de novo'),
+                    ),
+                  ],
+                ],
               ),
             ),
           ),
