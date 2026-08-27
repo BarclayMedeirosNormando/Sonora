@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import 'core/app_keys.dart';
 import 'core/theme.dart';
 import 'screens/validation_screen.dart';
 import 'services/download_service.dart';
@@ -47,6 +48,7 @@ class SonoraApp extends StatelessWidget {
     return MaterialApp(
       title: 'Sonora',
       debugShowCheckedModeBanner: false,
+      scaffoldMessengerKey: scaffoldMessengerKey,
       theme: AppTheme.dark,
       home: const ValidationScreen(),
     );

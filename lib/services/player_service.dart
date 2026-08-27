@@ -1,10 +1,11 @@
 import 'dart:async';
 import 'dart:convert';
 
-import 'package:flutter/widgets.dart';
+import 'package:flutter/material.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../core/app_keys.dart';
 import '../core/constants.dart';
 import '../models/track.dart';
 import 'download_service.dart';
@@ -84,18 +85,42 @@ class PlayerService extends ChangeNotifier with WidgetsBindingObserver {
       children: faixas.map(_fonteDe).toList(),
     );
 
-    await _player.setAudioSource(_playlist!, initialIndex: indiceInicial);
-    await _player.play();
-    _salvarEstado();
+    try {
+      await _player.setAudioSource(_playlist!, initialIndex: indiceInicial);
+      await _player.play();
+      _salvarEstado();
+    } catch (_) {
+      _avisarErroDeReproducao();
+    }
   }
 
   Future<void> alternarPlayPause() async {
-    if (_player.playing) {
-      await _player.pause();
-    } else {
-      await _player.play();
+    try {
+      if (_player.playing) {
+        await _player.pause();
+      } else {
+        await _player.play();
+      }
+      _salvarEstado();
+    } catch (_) {
+      _avisarErroDeReproducao();
     }
-    _salvarEstado();
+  }
+
+  /// Avisa o usuário quando a música não consegue carregar/tocar — geralmente
+  /// por causa de rede (Wi-Fi bloqueando o acesso direto ao Google Drive,
+  /// sem internet etc). Sem isso, apertar o play simplesmente não fazia
+  /// nada visível e parecia que o app tinha travado.
+  void _avisarErroDeReproducao() {
+    scaffoldMessengerKey.currentState?.showSnackBar(
+      const SnackBar(
+        content: Text(
+          'Não foi possível tocar a música. Verifique sua conexão — se '
+          'estiver no Wi-Fi, tente trocar para dados móveis (ou o contrário).',
+        ),
+        duration: Duration(seconds: 5),
+      ),
+    );
   }
 
   Future<void> proxima() async {
