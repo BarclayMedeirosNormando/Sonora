@@ -3,9 +3,23 @@
 // Endpoints:
 //   ?action=validar&id=XXX     -> checa liberação do App_ID
 //   ?action=navegar&pasta=XXX  -> lista subpastas e faixas de uma pasta do Drive
+//   ?action=cache              -> devolve o JSON do cache da biblioteca inteira
+//                                 (gerado por CacheBiblioteca.gs) — o app passou a
+//                                 buscar por aqui (27/08/2026) em vez de pegar o
+//                                 arquivo direto do Drive via alt=media, porque
+//                                 esse endpoint do Drive não garante cabeçalho
+//                                 CORS de forma confiável quando chamado de dentro
+//                                 de um navegador (Flutter Web) — dava
+//                                 "Failed to fetch" intermitente. Resposta do Web
+//                                 App via ContentService não tem esse problema.
 // ============================================================
 
 var PLANILHA_ACESSO_ID = '1UyH7VLTSU3pIRXH1DOiPSBB1vavy_qyRo65y07DEyiE'; // Log_Acesso_Sonora
+
+// Onde o CacheBiblioteca.gs salva o JSON da biblioteca inteira — tem que
+// bater com idPastaOndeSalvarCache e nomeArquivoCache lá naquele script.
+var ID_PASTA_CACHE = '1G8Muuustel-YTW3kvACoV9YuXb6xL0A-'; // pasta "Musicas"
+var NOME_ARQUIVO_CACHE = 'sonora_cache_biblioteca.json';
 
 // Quantos níveis abaixo de cada subpasta a busca de capa desce: 0 = só a
 // própria subpasta, 1 = subpasta + subpastas dela, 2 = + a "sub da sub".
@@ -23,8 +37,28 @@ function doGet(e) {
   if (action === 'navegar') {
     return navegarPasta(e.parameter.pasta);
   }
+  if (action === 'cache') {
+    return obterCache();
+  }
 
-  return jsonResponse({ erro: 'Ação inválida. Use action=validar ou action=navegar.' });
+  return jsonResponse({ erro: 'Ação inválida. Use action=validar, action=navegar ou action=cache.' });
+}
+
+/**
+ * Devolve o conteúdo do arquivo de cache da biblioteca (gerado por
+ * atualizarCacheBiblioteca(), em CacheBiblioteca.gs) como passthrough —
+ * já é um JSON pronto, só repassa o texto de dentro do arquivo.
+ */
+function obterCache() {
+  var pasta = DriveApp.getFolderById(ID_PASTA_CACHE);
+  var arquivos = pasta.getFilesByName(NOME_ARQUIVO_CACHE);
+  if (!arquivos.hasNext()) {
+    return jsonResponse({ erro: 'Cache da biblioteca ainda não foi gerado — rode atualizarCacheBiblioteca().' });
+  }
+  var conteudo = arquivos.next().getBlob().getDataAsString();
+  return ContentService
+    .createTextOutput(conteudo)
+    .setMimeType(ContentService.MimeType.JSON);
 }
 
 /**

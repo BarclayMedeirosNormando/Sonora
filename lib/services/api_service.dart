@@ -33,4 +33,29 @@ class ApiService {
     final body = jsonDecode(response.body) as Map<String, dynamic>;
     return PastaConteudo.fromJson(body);
   }
+
+  /// Busca o cache pré-computado da biblioteca inteira (gerado por
+  /// backend/CacheBiblioteca.gs) através do Web App — em vez de buscar o
+  /// arquivo direto do Drive via alt=media, porque esse endpoint do Drive
+  /// não garante cabeçalho CORS de forma confiável quando chamado de
+  /// dentro de um navegador (Flutter Web), causando "Failed to fetch"
+  /// intermitente. Passando pelo Web App (igual action=validar, que nunca
+  /// deu esse problema) resolve de vez.
+  /// action=cache
+  static Future<Map<String, dynamic>> obterCacheBiblioteca() async {
+    final uri = Uri.parse(AppConstants.backendBaseUrl).replace(
+      queryParameters: {'action': 'cache'},
+    );
+    final response = await http.get(uri);
+    if (response.statusCode != 200) {
+      throw Exception(
+        'Falha ao carregar o cache da biblioteca (HTTP ${response.statusCode})',
+      );
+    }
+    final body = jsonDecode(utf8.decode(response.bodyBytes)) as Map<String, dynamic>;
+    if (body['erro'] != null) {
+      throw Exception(body['erro']);
+    }
+    return body;
+  }
 }

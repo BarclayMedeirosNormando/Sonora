@@ -1,19 +1,19 @@
-import 'dart:convert';
-import 'package:http/http.dart' as http;
-
-import '../core/constants.dart';
 import '../models/album.dart';
 import '../models/pasta_conteudo.dart';
 import '../models/track.dart';
+import 'api_service.dart';
 
 /// Lê o cache pré-computado da biblioteca inteira (gerado pelo script
-/// backend/CacheBiblioteca.gs) direto do Drive via API key — igual capa e
-/// faixa, sem passar pelo Apps Script Web App. Usado pela Home
-/// ("adicionados recentemente"), pela Busca e também pela navegação de
-/// pastas (FolderScreen) — que antes chamava o Apps Script a cada pasta
-/// aberta e podia esbarrar no limite de 30 execuções simultâneas do script
-/// com muita gente navegando ao mesmo tempo. Só a validação de acesso
-/// continua passando pelo backend.
+/// backend/CacheBiblioteca.gs) através do Web App (action=cache, ver
+/// ApiService.obterCacheBiblioteca) — mudou de buscar direto do Drive via
+/// API key (27/08/2026) porque o endpoint alt=media do Drive não garante
+/// CORS de forma confiável quando chamado de um navegador (Flutter Web).
+/// Usado pela Home ("adicionados recentemente"), pela Busca e também pela
+/// navegação de pastas (FolderScreen) — que antes chamava o Apps Script a
+/// cada pasta aberta e podia esbarrar no limite de 30 execuções
+/// simultâneas do script com muita gente navegando ao mesmo tempo; agora
+/// só esse fetch do cache passa pelo Web App (uma vez, guardado em
+/// memória) — a navegação pasta-a-pasta em si não chama o Apps Script.
 ///
 /// Guarda tudo em memória durante a sessão do app; use forcarRecarga pra
 /// puxar de novo (ex: pull-to-refresh).
@@ -73,28 +73,7 @@ class LibraryCacheService {
   }
 
   static Future<void> _carregar() async {
-    if (AppConstants.libraryCacheFileId.isEmpty) {
-      // Cache ainda não configurado (falta rodar o script e preencher o
-      // ID em constants.dart) — não é erro, só não tem nada pra mostrar
-      // (Home/Busca ficam vazias, navegação de pasta também).
-      _albunsEmCache = [];
-      _arvorePastasEmCache = [];
-      _arvoreFaixasEmCache = [];
-      return;
-    }
-
-    final uri = Uri.parse(
-      'https://www.googleapis.com/drive/v3/files/${AppConstants.libraryCacheFileId}'
-      '?alt=media&key=${AppConstants.driveApiKey}',
-    );
-    final response = await http.get(uri);
-    if (response.statusCode != 200) {
-      throw Exception(
-        'Falha ao carregar o cache da biblioteca (HTTP ${response.statusCode})',
-      );
-    }
-
-    final body = jsonDecode(utf8.decode(response.bodyBytes)) as Map<String, dynamic>;
+    final body = await ApiService.obterCacheBiblioteca();
 
     final albunsJson = body['albuns'] as List<dynamic>? ?? [];
     _albunsEmCache = albunsJson
