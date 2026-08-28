@@ -30,6 +30,14 @@ class AppConstants {
   /// não mostram nada do cache ainda, sem quebrar o resto do app.
   static const String libraryCacheFileId = '1Ks8PvbUfQqg75lHty2qb9bnoIvt7c4pP';
 
+  /// URL base do backend alternativo em Google Cloud Run (item 4 do
+  /// plano de escala — ver sonora_deploy.md nas notas do projeto). Hoje
+  /// só é usada pra registrar plays (telemetria pro painel
+  /// administrativo, seção Engajamento) — validar/cache continuam no
+  /// Apps Script (backendBaseUrl acima), sem mudança nenhuma aí.
+  static const String cloudRunBaseUrl =
+      'https://sonora-backend-99445390129.us-central1.run.app';
+
   /// Número (com DDI 55 + DDD, só dígitos) que recebe os pedidos de
   /// música/álbum/artista mandados pela tela "Pedir música", via link
   /// wa.me — sem precisar de nenhuma API paga do WhatsApp.

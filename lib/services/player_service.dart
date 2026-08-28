@@ -8,6 +8,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../core/app_keys.dart';
 import '../core/constants.dart';
 import '../models/track.dart';
+import 'api_service.dart';
+import 'device_id_service.dart';
 import 'download_service.dart';
 
 /// Estado e controle da reprodução: fila de faixas, play/pause, avançar/
@@ -35,6 +37,13 @@ class PlayerService extends ChangeNotifier with WidgetsBindingObserver {
       if (index != null && index != _indiceAtual) {
         _indiceAtual = index;
         notifyListeners();
+        // _player.playing filtra a restauração de estado no boot do app
+        // (que carrega a fila mas não começa a tocar sozinha) — só conta
+        // como play de verdade quando já está tocando (troca de faixa
+        // por proxima()/anterior() ou avanço automático no fim da faixa).
+        if (_player.playing) {
+          _registrarPlayDaFaixaAtual();
+        }
       }
       _salvarEstado();
     });
@@ -89,9 +98,25 @@ class PlayerService extends ChangeNotifier with WidgetsBindingObserver {
       await _player.setAudioSource(_playlist!, initialIndex: indiceInicial);
       await _player.play();
       _salvarEstado();
+      _registrarPlayDaFaixaAtual();
     } catch (_) {
       _avisarErroDeReproducao();
     }
+  }
+
+  /// Telemetria pro painel administrativo — dispara sem bloquear nem
+  /// poder falhar a reprodução (ver ApiService.registrarPlay, que já
+  /// engole qualquer erro sozinho).
+  void _registrarPlayDaFaixaAtual() {
+    final faixa = faixaAtual;
+    if (faixa == null) return;
+    DeviceIdService.getOrCreateDeviceId().then((appId) {
+      ApiService.registrarPlay(
+        appId: appId,
+        faixaId: faixa.id,
+        faixaNome: faixa.displayTitle,
+      );
+    });
   }
 
   Future<void> alternarPlayPause() async {

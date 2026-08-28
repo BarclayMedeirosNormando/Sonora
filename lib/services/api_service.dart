@@ -82,6 +82,35 @@ class ApiService {
     });
   }
 
+  /// Registra que uma faixa começou a tocar de verdade — telemetria pro
+  /// painel administrativo (seção Engajamento, ver backend-cloudrun/). Sem
+  /// retentativas e sem propagar erro: se o Cloud Run estiver fora do ar
+  /// ou sem rede, isso nunca deve afetar a reprodução — falha em silêncio.
+  static Future<void> registrarPlay({
+    required String appId,
+    required String faixaId,
+    required String faixaNome,
+    String albumNome = '',
+  }) async {
+    try {
+      final uri = Uri.parse('${AppConstants.cloudRunBaseUrl}/registrar-play');
+      await http
+          .post(
+            uri,
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({
+              'appId': appId,
+              'faixaId': faixaId,
+              'faixaNome': faixaNome,
+              'albumNome': albumNome,
+            }),
+          )
+          .timeout(const Duration(seconds: 8));
+    } catch (_) {
+      // Telemetria — nunca deve afetar a reprodução.
+    }
+  }
+
   /// Tenta [tentativa] até 3 vezes no total, com uma pequena espera entre
   /// cada uma — suaviza picos passageiros (ex: Apps Script esbarrando no
   /// limite de 30 execuções simultâneas, ou uma instabilidade rápida de

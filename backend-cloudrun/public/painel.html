@@ -1,0 +1,480 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Sonora — Painel</title>
+<style>
+  :root {
+    color-scheme: light;
+    --surface-1:      #fcfcfb;
+    --page:           #f9f9f7;
+    --text-primary:   #0b0b0b;
+    --text-secondary: #52514e;
+    --text-muted:     #898781;
+    --grid:           #e1e0d9;
+    --baseline:       #c3c2b7;
+    --border:         rgba(11,11,11,0.10);
+    --series-1:       #2a78d6;
+    --series-1-wash:  rgba(42,120,214,0.10);
+    --series-2:       #eb6834;
+    --series-2-wash:  rgba(235,104,52,0.10);
+    --status-warning: #fab219;
+    --status-good:    #0ca30c;
+    --status-critical:#d03b3b;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:where(:not([data-theme="light"])) {
+      color-scheme: dark;
+      --surface-1:      #1a1a19;
+      --page:           #0d0d0d;
+      --text-primary:   #ffffff;
+      --text-secondary: #c3c2b7;
+      --text-muted:     #898781;
+      --grid:           #2c2c2a;
+      --baseline:       #383835;
+      --border:         rgba(255,255,255,0.10);
+      --series-1:       #3987e5;
+      --series-1-wash:  rgba(57,135,229,0.14);
+      --series-2:       #d95926;
+      --series-2-wash:  rgba(217,89,38,0.14);
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --surface-1:      #1a1a19;
+    --page:           #0d0d0d;
+    --text-primary:   #ffffff;
+    --text-secondary: #c3c2b7;
+    --text-muted:     #898781;
+    --grid:           #2c2c2a;
+    --baseline:       #383835;
+    --border:         rgba(255,255,255,0.10);
+    --series-1:       #3987e5;
+    --series-1-wash:  rgba(57,135,229,0.14);
+    --series-2:       #d95926;
+    --series-2-wash:  rgba(217,89,38,0.14);
+  }
+
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--page); color: var(--text-primary);
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif; -webkit-font-smoothing: antialiased; }
+  .wrap { max-width: 1100px; margin: 0 auto; padding: 28px 20px 64px; }
+
+  .banner { border-radius: 10px; padding: 10px 16px; font-size: 13px; margin-bottom: 24px; border: 1px solid var(--border); }
+  .banner.error { background: rgba(208,59,59,0.10); color: var(--status-critical); }
+  .banner.info { background: var(--series-1-wash); color: var(--text-secondary); }
+  .banner b { color: var(--text-primary); }
+
+  header.top { margin-bottom: 28px; display:flex; align-items:baseline; justify-content:space-between; gap:12px; flex-wrap:wrap; }
+  header.top h1 { font-size: 22px; font-weight: 650; margin: 0 0 4px; }
+  header.top p { margin: 0; color: var(--text-secondary); font-size: 14px; }
+  #refresh-btn { font-size: 12.5px; font-weight: 550; background: var(--surface-1); color: var(--text-primary);
+    border: 1px solid var(--border); border-radius: 8px; padding: 7px 14px; cursor: pointer; }
+  #refresh-btn:hover { background: var(--series-1-wash); }
+
+  section { margin-bottom: 36px; }
+  section > h2 { font-size: 13px; font-weight: 650; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); margin: 0 0 14px; }
+  section > h2 .tag { text-transform: none; letter-spacing: normal; font-weight: 500; background: rgba(250,178,25,0.14);
+    color: var(--status-warning); border: 1px solid rgba(250,178,25,0.35); border-radius: 6px; padding: 2px 8px; margin-left: 8px; font-size: 11.5px; }
+
+  .kpi-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+  .card { background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px; padding: 16px 18px; }
+  .stat-tile .label { font-size: 12.5px; color: var(--text-secondary); margin-bottom: 8px; }
+  .stat-tile .value { font-size: 26px; font-weight: 650; line-height: 1; }
+  .stat-tile .delta { font-size: 12.5px; margin-top: 8px; }
+  .delta.up { color: var(--status-good); } .delta.warn { color: var(--status-warning); } .delta.flat { color: var(--text-muted); }
+
+  .grid-2 { display: grid; grid-template-columns: 1.4fr 1fr; gap: 14px; align-items: start; }
+  .grid-2b { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; align-items: start; }
+  .card h3 { font-size: 14px; font-weight: 650; margin: 0 0 2px; }
+  .card .sub { font-size: 12px; color: var(--text-muted); margin: 0 0 14px; }
+
+  svg { display: block; width: 100%; height: auto; overflow: visible; }
+  .axis-label { font-size: 10.5px; fill: var(--text-muted); font-family: inherit; }
+  .grid-line { stroke: var(--grid); stroke-width: 1; }
+
+  .tooltip { position: absolute; pointer-events: none; background: var(--surface-1); border: 1px solid var(--border);
+    border-radius: 8px; padding: 6px 10px; font-size: 12px; box-shadow: 0 4px 16px rgba(0,0,0,0.18); opacity: 0; transition: opacity 0.1s; white-space: nowrap; z-index: 5; }
+  .tooltip .t-label { color: var(--text-muted); } .tooltip .t-value { font-weight: 650; margin-left: 6px; }
+  .chart-wrap { position: relative; min-height: 40px; }
+  .empty-note { font-size: 12.5px; color: var(--text-muted); padding: 20px 0; text-align: center; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  thead th { text-align: left; font-weight: 550; color: var(--text-muted); font-size: 11.5px; text-transform: uppercase;
+    letter-spacing: 0.03em; padding: 0 10px 8px; border-bottom: 1px solid var(--grid); }
+  tbody td { padding: 10px 10px; border-bottom: 1px solid var(--grid); vertical-align: middle; }
+  tbody tr:last-child td { border-bottom: none; }
+  .pill { display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; font-weight: 550; padding: 3px 9px; border-radius: 999px; }
+  .pill.pending { background: rgba(250,178,25,0.14); color: var(--status-warning); }
+  .pill.ok { background: rgba(12,163,12,0.12); color: var(--status-good); }
+  .pill-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+  .btn { font-size: 12px; font-weight: 550; background: var(--series-1); color: white; border: none; border-radius: 7px; padding: 6px 12px; cursor: pointer; }
+  .btn:hover { opacity: 0.88; } .btn:disabled { opacity: 0.5; cursor: default; }
+
+  .user-row { cursor: pointer; } .user-row:hover { background: var(--series-1-wash); }
+  .chevron { display: inline-block; width: 16px; color: var(--text-muted); transition: transform 0.15s; }
+  .user-row.open .chevron { transform: rotate(90deg); }
+  .detail-row td { padding: 0; border-bottom: 1px solid var(--grid); } .detail-row.closed { display: none; }
+  .detail-panel { display: flex; gap: 28px; flex-wrap: wrap; padding: 14px 16px 16px 34px; background: var(--page); }
+  .detail-field .label { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.03em; margin-bottom: 3px; }
+  .detail-field .value { font-size: 13.5px; font-weight: 600; }
+  .detail-field .value.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-weight: 500; font-size: 12px; color: var(--text-secondary); }
+  .detail-note { font-size: 12px; color: var(--text-muted); width: 100%; margin-top: 2px; }
+
+  .legend { display: flex; gap: 16px; font-size: 12px; color: var(--text-secondary); margin-top: 10px; }
+  .legend .item { display: flex; align-items: center; gap: 6px; } .legend .swatch { width: 10px; height: 10px; border-radius: 2px; }
+  .foot-note { font-size: 12px; color: var(--text-muted); margin-top: 6px; }
+
+  @media (max-width: 760px) { .kpi-row { grid-template-columns: repeat(2, 1fr); } .grid-2, .grid-2b { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div id="banner-slot"></div>
+
+  <header class="top">
+    <div>
+      <h1>Sonora — Painel administrativo</h1>
+      <p id="subtitle">Carregando...</p>
+    </div>
+    <button id="refresh-btn">↻ Atualizar</button>
+  </header>
+
+  <section>
+    <div class="kpi-row" id="kpi-row">
+      <div class="card stat-tile"><div class="label">Total de álbuns</div><div class="value" id="kpi-albuns">—</div><div class="delta flat" id="kpi-albuns-sub"></div></div>
+      <div class="card stat-tile"><div class="label">Total de faixas</div><div class="value" id="kpi-faixas">—</div><div class="delta flat" id="kpi-faixas-sub"></div></div>
+      <div class="card stat-tile"><div class="label">Dispositivos liberados</div><div class="value" id="kpi-liberados">—</div><div class="delta flat" id="kpi-liberados-sub"></div></div>
+      <div class="card stat-tile"><div class="label">Pendentes de liberação</div><div class="value" id="kpi-pendentes">—</div><div class="delta warn" id="kpi-pendentes-sub"></div></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Biblioteca</h2>
+    <div class="grid-2">
+      <div class="card">
+        <h3>Crescimento da biblioteca</h3>
+        <p class="sub">Total de faixas a cada geração de cache</p>
+        <div class="chart-wrap" id="chart-growth"></div>
+      </div>
+      <div class="card">
+        <h3>Última geração de cache</h3>
+        <p class="sub">Resultado do <code>/gerar-cache</code> mais recente</p>
+        <div id="ultima-geracao" style="display:flex; flex-direction:column; gap:12px; margin-top:4px;"></div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Dispositivos &amp; acesso</h2>
+    <div class="grid-2b">
+      <div class="card">
+        <h3>Aguardando liberação</h3>
+        <p class="sub">Dispositivos novos, cadastrados automaticamente como bloqueados</p>
+        <table><thead><tr><th>Dispositivo</th><th>Desde</th><th>Status</th><th></th></tr></thead><tbody id="pendentes-tbody"></tbody></table>
+        <p class="foot-note" id="pendentes-vazio" style="display:none;">Nenhum dispositivo pendente agora.</p>
+      </div>
+      <div class="card">
+        <h3>Liberados × bloqueados</h3>
+        <p class="sub">Distribuição atual dos dispositivos cadastrados</p>
+        <div class="chart-wrap" id="chart-devices"></div>
+        <div class="legend">
+          <div class="item"><span class="swatch" style="background:var(--series-1)"></span><span id="legend-liberados">Liberados</span></div>
+          <div class="item"><span class="swatch" style="background:var(--status-warning)"></span><span id="legend-bloqueados">Bloqueados</span></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Usuários</h2>
+    <div class="card">
+      <h3>Todos os liberados</h3>
+      <p class="sub">Clique num nome pra ver o perfil</p>
+      <table><thead><tr><th></th><th>Nome</th><th>Liberado em</th><th>Tempo de casa</th><th>Status</th></tr></thead><tbody id="users-tbody"></tbody></table>
+    </div>
+  </section>
+
+  <section>
+    <h2>Engajamento <span class="tag" id="engajamento-tag" style="display:none;">ainda sem dados registrados</span></h2>
+    <div class="grid-2">
+      <div class="card">
+        <h3>Faixas mais tocadas</h3>
+        <p class="sub">Últimos 14 dias</p>
+        <div class="chart-wrap" id="chart-top-tracks"></div>
+      </div>
+      <div class="card">
+        <h3>Plays por dia</h3>
+        <p class="sub">Últimos 14 dias</p>
+        <div class="chart-wrap" id="chart-plays"></div>
+      </div>
+    </div>
+  </section>
+</div>
+
+<script>
+(function () {
+  const params = new URLSearchParams(location.search);
+  const CHAVE = params.get('chave') || '';
+  const cs = getComputedStyle(document.documentElement);
+  const color = (name) => cs.getPropertyValue(name).trim();
+  const fmt = (n) => Number(n || 0).toLocaleString('pt-BR');
+
+  function qs(path) {
+    const sep = path.includes('?') ? '&' : '?';
+    return path + sep + 'chave=' + encodeURIComponent(CHAVE);
+  }
+  async function apiGet(path) {
+    const r = await fetch(qs(path));
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(data.erro || ('HTTP ' + r.status));
+    return data;
+  }
+  async function apiPost(path, body) {
+    const r = await fetch(qs(path), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body || {}),
+    });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(data.erro || ('HTTP ' + r.status));
+    return data;
+  }
+
+  function showBanner(kind, html) {
+    document.getElementById('banner-slot').innerHTML = `<div class="banner ${kind}">${html}</div>`;
+  }
+  function clearBanner() { document.getElementById('banner-slot').innerHTML = ''; }
+
+  // ---------- Charts (mesmos componentes do protótipo) ----------
+  function lineChart(el, data, opts) {
+    if (!data || data.length === 0) { el.innerHTML = '<div class="empty-note">Ainda não há dados suficientes.</div>'; return; }
+    if (data.length === 1) {
+      el.innerHTML = `<div class="empty-note">Só uma geração registrada até agora (${fmt(data[0].v)}). O gráfico aparece a partir da segunda.</div>`;
+      return;
+    }
+    const w = 480, h = 190, padL = 44, padR = 12, padT = 12, padB = 26;
+    const plotW = w - padL - padR, plotH = h - padT - padB;
+    const maxV = Math.max(...data.map(d => d.v)) * 1.12;
+    const x = i => padL + (i / (data.length - 1)) * plotW;
+    const y = v => padT + plotH - (v / maxV) * plotH;
+    const seriesColor = opts.color, washColor = opts.wash;
+
+    let path = '';
+    data.forEach((d, i) => { path += (i === 0 ? 'M' : 'L') + x(i).toFixed(1) + ',' + y(d.v).toFixed(1) + ' '; });
+    const area = path + `L${x(data.length-1).toFixed(1)},${(padT+plotH).toFixed(1)} L${x(0).toFixed(1)},${(padT+plotH).toFixed(1)} Z`;
+
+    let grid = '';
+    for (let s = 0; s <= 4; s++) {
+      const v = (maxV / 4) * s, yy = y(v).toFixed(1);
+      grid += `<line class="grid-line" x1="${padL}" y1="${yy}" x2="${w-padR}" y2="${yy}" />`;
+      grid += `<text class="axis-label" x="${padL-8}" y="${(+yy+3)}" text-anchor="end">${fmt(Math.round(v))}</text>`;
+    }
+    let xlabels = '';
+    [0, Math.floor((data.length-1)/2), data.length-1].forEach(i => {
+      xlabels += `<text class="axis-label" x="${x(i).toFixed(1)}" y="${h-6}" text-anchor="middle">${data[i].label}</text>`;
+    });
+    const lastX = x(data.length-1).toFixed(1), lastY = y(data[data.length-1].v).toFixed(1);
+
+    el.innerHTML = `
+      <svg viewBox="0 0 ${w} ${h}">
+        ${grid}
+        <path d="${area}" fill="${washColor}" stroke="none"></path>
+        <path d="${path}" fill="none" stroke="${seriesColor}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"></path>
+        <circle cx="${lastX}" cy="${lastY}" r="4" fill="${seriesColor}" stroke="${color('--surface-1')}" stroke-width="2"></circle>
+        <text class="axis-label" x="${lastX}" y="${+lastY-10}" text-anchor="end" style="fill:${seriesColor}; font-weight:650;">${fmt(data[data.length-1].v)}</text>
+        ${xlabels}
+        ${data.map((d,i) => `<circle class="hp" data-i="${i}" cx="${x(i).toFixed(1)}" cy="${y(d.v).toFixed(1)}" r="9" fill="transparent"></circle>`).join('')}
+      </svg>
+      <div class="tooltip"></div>
+    `;
+    const tip = el.querySelector('.tooltip');
+    el.querySelectorAll('.hp').forEach(pt => {
+      pt.addEventListener('mouseenter', () => {
+        const d = data[+pt.getAttribute('data-i')];
+        tip.innerHTML = `<span class="t-label">${d.label}</span><span class="t-value">${fmt(d.v)}</span>`;
+        tip.style.opacity = 1;
+      });
+      pt.addEventListener('mousemove', (e) => {
+        const rect = el.getBoundingClientRect();
+        tip.style.left = (e.clientX - rect.left + 12) + 'px';
+        tip.style.top = (e.clientY - rect.top - 30) + 'px';
+      });
+      pt.addEventListener('mouseleave', () => { tip.style.opacity = 0; });
+    });
+  }
+
+  function hBarChart(el, data, opts) {
+    if (!data || data.length === 0) { el.innerHTML = '<div class="empty-note">Ainda não há plays registrados.</div>'; return; }
+    const w = 480, rowH = 30, padL = 130, padR = 46, padT = 6;
+    const h = padT*2 + rowH*data.length;
+    const plotW = w - padL - padR;
+    const maxV = Math.max(...data.map(d => d.v)) * 1.08;
+    const seriesColor = opts.color;
+    let bars = '';
+    data.forEach((d, i) => {
+      const barW = (d.v / maxV) * plotW, yy = padT + i*rowH, barH = 16, cy = yy + rowH/2;
+      const label = d.label.length > 22 ? d.label.slice(0,21) + '…' : d.label;
+      bars += `
+        <text class="axis-label" x="${padL-10}" y="${cy+4}" text-anchor="end" style="fill:var(--text-secondary); font-size:12px;">${label}</text>
+        <rect x="${padL}" y="${(cy-barH/2).toFixed(1)}" width="${barW.toFixed(1)}" height="${barH}" rx="4" fill="${seriesColor}"></rect>
+        <text class="axis-label" x="${(padL+barW+8).toFixed(1)}" y="${cy+4}" text-anchor="start" style="font-weight:600; fill:var(--text-primary);">${fmt(d.v)}</text>
+      `;
+    });
+    el.innerHTML = `<svg viewBox="0 0 ${w} ${h}" style="height:${h}px;">${bars}</svg>`;
+  }
+
+  function compareBar(el, a, b) {
+    const w = 480, h = 70, total = Math.max(a.v + b.v, 1);
+    const aw = (a.v / total) * (w - 4);
+    el.innerHTML = `
+      <svg viewBox="0 0 ${w} ${h}">
+        <rect x="0" y="20" width="${aw.toFixed(1)}" height="28" rx="4" fill="${color('--series-1')}"></rect>
+        <rect x="${(aw+4).toFixed(1)}" y="20" width="${(w-aw-4).toFixed(1)}" height="28" rx="4" fill="${color('--status-warning')}"></rect>
+        <text x="8" y="14" class="axis-label" style="font-weight:650; fill:${color('--series-1')};">${a.v}</text>
+        <text x="${(w-8).toFixed(1)}" y="14" text-anchor="end" class="axis-label" style="font-weight:650; fill:${color('--status-warning')};">${b.v}</text>
+      </svg>
+    `;
+  }
+
+  function diasDesde(dataStr) {
+    if (!dataStr) return null;
+    const d = new Date(dataStr.replace(' ', 'T'));
+    if (isNaN(d)) return null;
+    return Math.max(0, Math.floor((Date.now() - d.getTime()) / 86400000));
+  }
+  function fmtDiaCurto(isoDate) {
+    const [, m, d] = isoDate.split('-');
+    return `${d}/${m}`;
+  }
+
+  // ---------- Carregar tudo ----------
+  async function carregar() {
+    clearBanner();
+    try {
+      const [resumo, usuariosResp, engajamento] = await Promise.all([
+        apiGet('/api/resumo'),
+        apiGet('/api/usuarios'),
+        apiGet('/api/engajamento'),
+      ]);
+
+      document.getElementById('subtitle').textContent =
+        'Atualizado às ' + new Date().toLocaleTimeString('pt-BR');
+
+      // KPIs
+      const bib = resumo.biblioteca;
+      document.getElementById('kpi-albuns').textContent = bib ? fmt(bib.totalAlbuns) : '—';
+      document.getElementById('kpi-faixas').textContent = bib ? fmt(bib.totalFaixas) : '—';
+      document.getElementById('kpi-liberados').textContent = fmt(resumo.dispositivos.liberados);
+      document.getElementById('kpi-pendentes').textContent = fmt(resumo.dispositivos.bloqueados);
+      document.getElementById('kpi-pendentes-sub').textContent =
+        resumo.dispositivos.bloqueados > 0 ? '● aguardando revisão' : '';
+      document.getElementById('kpi-albuns-sub').textContent = bib ? ('geração de ' + new Date(bib.geradoEm).toLocaleDateString('pt-BR')) : 'sem geração ainda';
+
+      // Última geração
+      const ug = document.getElementById('ultima-geracao');
+      if (bib) {
+        ug.innerHTML = `
+          <div><div class="label" style="font-size:12px;color:var(--text-muted);">Quando</div><div style="font-size:14px;font-weight:600;">${new Date(bib.geradoEm).toLocaleString('pt-BR')}</div></div>
+          <div><div class="label" style="font-size:12px;color:var(--text-muted);">Duração</div><div style="font-size:14px;font-weight:600;">${(bib.duracaoMs/1000).toFixed(2)}s</div></div>
+          <div><div class="label" style="font-size:12px;color:var(--text-muted);">Resultado</div><div style="font-size:14px;font-weight:600;color:var(--status-good);">✓ ${fmt(bib.totalAlbuns)} álbuns · ${fmt(bib.totalNos)} itens</div></div>
+        `;
+      } else {
+        ug.innerHTML = '<div class="empty-note">Ainda não rodou <code>/gerar-cache</code> desde que o painel foi implantado.</div>';
+      }
+
+      // Crescimento
+      const growth = (resumo.historico || []).map(h => ({ label: new Date(h.geradoEm).toLocaleDateString('pt-BR', {day:'2-digit', month:'2-digit'}), v: h.totalFaixas }));
+      lineChart(document.getElementById('chart-growth'), growth, { color: color('--series-1'), wash: color('--series-1-wash') });
+
+      // Dispositivos
+      compareBar(document.getElementById('chart-devices'), { v: resumo.dispositivos.liberados }, { v: resumo.dispositivos.bloqueados });
+      document.getElementById('legend-liberados').textContent = `Liberados (${resumo.dispositivos.liberados})`;
+      document.getElementById('legend-bloqueados').textContent = `Bloqueados (${resumo.dispositivos.bloqueados})`;
+
+      // Tabela pendentes
+      const usuarios = usuariosResp.usuarios || [];
+      const pendentes = usuarios.filter(u => u.status.toLowerCase() !== 'liberado');
+      const pendTbody = document.getElementById('pendentes-tbody');
+      pendTbody.innerHTML = '';
+      document.getElementById('pendentes-vazio').style.display = pendentes.length ? 'none' : 'block';
+      pendentes.forEach(u => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td>${u.nome || '(sem nome)'}</td>
+          <td>${u.dataLiberacao || '—'}</td>
+          <td><span class="pill pending"><span class="pill-dot"></span>${u.status}</span></td>
+          <td><button class="btn">Liberar</button></td>
+        `;
+        tr.querySelector('button').addEventListener('click', async (e) => {
+          const btn = e.target;
+          btn.disabled = true; btn.textContent = 'Liberando...';
+          try {
+            await apiPost('/api/liberar', { appId: u.appId });
+            await carregar();
+          } catch (err) {
+            btn.disabled = false; btn.textContent = 'Liberar';
+            showBanner('error', 'Falha ao liberar: ' + err.message);
+          }
+        });
+        pendTbody.appendChild(tr);
+      });
+
+      // Tabela usuários liberados
+      const liberadosLista = usuarios.filter(u => u.status.toLowerCase() === 'liberado');
+      const usersTbody = document.getElementById('users-tbody');
+      usersTbody.innerHTML = '';
+      liberadosLista.forEach(u => {
+        const dias = diasDesde(u.dataLiberacao);
+        const row = document.createElement('tr');
+        row.className = 'user-row';
+        row.innerHTML = `
+          <td style="width:24px;"><span class="chevron">▸</span></td>
+          <td>${u.nome || '(sem nome)'}</td>
+          <td>${u.dataLiberacao || '—'}</td>
+          <td>${dias === null ? '—' : dias + (dias === 1 ? ' dia' : ' dias')}</td>
+          <td><span class="pill ok"><span class="pill-dot"></span>Liberado</span></td>
+        `;
+        const detail = document.createElement('tr');
+        detail.className = 'detail-row closed';
+        const notaEngajamento = u.totalPlays14d
+          ? `<div class="detail-field"><div class="label">Plays (14 dias)</div><div class="value">${fmt(u.totalPlays14d)}</div></div>
+             <div class="detail-field"><div class="label">Faixa favorita</div><div class="value">${u.faixaFavorita || '—'}</div></div>`
+          : `<div class="detail-note">Sem plays registrados nos últimos 14 dias.</div>`;
+        detail.innerHTML = `
+          <td colspan="5">
+            <div class="detail-panel">
+              <div class="detail-field"><div class="label">App ID</div><div class="value mono">${u.appId}</div></div>
+              <div class="detail-field"><div class="label">Liberado em</div><div class="value">${u.dataLiberacao || '—'}</div></div>
+              <div class="detail-field"><div class="label">Tempo de casa</div><div class="value">${dias === null ? '—' : dias + ' dias'}</div></div>
+              ${notaEngajamento}
+            </div>
+          </td>
+        `;
+        row.addEventListener('click', () => {
+          const isOpen = row.classList.toggle('open');
+          detail.classList.toggle('closed', !isOpen);
+        });
+        usersTbody.appendChild(row);
+        usersTbody.appendChild(detail);
+      });
+
+      // Engajamento
+      document.getElementById('engajamento-tag').style.display = engajamento.totalPlays14d ? 'none' : 'inline-block';
+      const topFaixas = (engajamento.topFaixas || []).map(f => ({ label: f.faixaNome, v: f.count }));
+      hBarChart(document.getElementById('chart-top-tracks'), topFaixas, { color: color('--series-2') });
+      const playsPorDia = (engajamento.playsPorDia || []).map(p => ({ label: fmtDiaCurto(p.dia), v: p.total }));
+      lineChart(document.getElementById('chart-plays'), playsPorDia, { color: color('--series-2'), wash: color('--series-2-wash') });
+
+    } catch (err) {
+      showBanner('error', `<b>Falha ao carregar o painel:</b> ${err.message}. Confira se a URL tem <code>?chave=SUACHAVE</code> correta.`);
+    }
+  }
+
+  document.getElementById('refresh-btn').addEventListener('click', carregar);
+  carregar();
+})();
+</script>
+</body>
+</html>

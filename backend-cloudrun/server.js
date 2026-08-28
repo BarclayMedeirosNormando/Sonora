@@ -24,10 +24,23 @@
 //   dar conta de uma biblioteca de ~200 mil faixas (testado em
 //   28/08/2026 com ~2.900 faixas, biblioteca ainda crescendo aos poucos).
 //   Acionado manualmente pelo Barclay (não é chamado pelo app).
+//
+// PAINEL ADMINISTRATIVO (29/08/2026):
+//   POST /registrar-play           -> app registra cada play no Firestore
+//   GET  /api/resumo?chave=XXX     -> biblioteca + contagem de dispositivos
+//   GET  /api/usuarios?chave=XXX   -> lista de dispositivos/usuários
+//   POST /api/liberar?chave=XXX    -> libera um App_ID (Status -> Liberado)
+//   GET  /api/engajamento?chave=XXX-> agrega plays do Firestore (14 dias)
+//   GET  /painel?chave=XXX         -> a página do painel em si
+//   Protegido por PAINEL_CHAVE (mesma ideia do GERAR_CACHE_CHAVE, senha
+//   simples via query param — não é auth de verdade). /registrar-play não
+//   tem trava, é chamado o tempo todo pelo app.
 // ============================================================
 
 const stream = require('stream');
+const path = require('path');
 const express = require('express');
+const { Firestore } = require('@google-cloud/firestore');
 
 const app = express();
 const PORT = process.env.PORT || 8080;
@@ -53,8 +66,32 @@ const CONCORRENCIA_GERAR_CACHE = 6;
 // sistema de auth de verdade, só uma trava básica.
 const GERAR_CACHE_CHAVE = process.env.GERAR_CACHE_CHAVE || '';
 
+// Senha simples pro painel administrativo (/painel e as rotas /api/*) —
+// mesma ideia do GERAR_CACHE_CHAVE, não é auth de verdade.
+const PAINEL_CHAVE = process.env.PAINEL_CHAVE || '';
+
+app.use(express.json());
+
 let sheetsClientPromise = null;
 let driveClientPromise = null;
+let firestoreClientPromise = null;
+
+/**
+ * Cliente do Firestore, usando a mesma conta de serviço anexada ao
+ * serviço do Cloud Run (Application Default Credentials — sem chave
+ * baixada). A conta de serviço precisa do papel "Cloud Datastore User"
+ * (ou "Editor") no projeto — ver README.md.
+ */
+function getFirestore() {
+  if (!firestoreClientPromise) {
+    firestoreClientPromise = new Firestore();
+  }
+  return firestoreClientPromise;
+}
+
+function chavePainelValida(req) {
+  return !PAINEL_CHAVE || req.query.chave === PAINEL_CHAVE;
+}
 
 /**
  * Cliente autenticado do Google Drive API, mesma identidade da conta de
@@ -291,12 +328,27 @@ app.get('/gerar-cache', async (req, res) => {
       requestBody: { role: 'reader', type: 'anyone' },
     });
 
-    return res.json({
-      ok: true,
+    const totalFaixas = arvore.filter((n) => n.tipo === 'faixa').length;
+    const resumoGeracao = {
+      geradoEm: new Date().toISOString(),
       totalAlbuns: albuns.length,
+      totalFaixas,
       totalNos: arvore.length,
       duracaoMs: Date.now() - inicio,
-    });
+    };
+
+    // Guarda o resultado no Firestore pro painel mostrar sem precisar
+    // rodar /gerar-cache de novo — falha aqui não deve derrubar a
+    // resposta principal (o cache já foi gravado com sucesso).
+    try {
+      const db = getFirestore();
+      await db.collection('estado').doc('biblioteca').set(resumoGeracao);
+      await db.collection('historicoBiblioteca').add(resumoGeracao);
+    } catch (erroFirestore) {
+      console.error('Aviso: falha ao salvar estado no Firestore (não bloqueia):', erroFirestore);
+    }
+
+    return res.json({ ok: true, ...resumoGeracao });
   } catch (erro) {
     console.error('Erro em /gerar-cache:', erro);
     return res.status(500).json({
@@ -305,6 +357,267 @@ app.get('/gerar-cache', async (req, res) => {
       duracaoMs: Date.now() - inicio,
     });
   }
+});
+
+/**
+ * Registrado pelo app a cada faixa que começa a tocar de verdade (ver
+ * PlayerService no Flutter). Sem trava de senha — é chamado o tempo todo
+ * durante o uso normal do app, não é uma ação administrativa. O app
+ * ignora o resultado (não afeta a reprodução se isso aqui falhar).
+ */
+app.post('/registrar-play', async (req, res) => {
+  const { appId, faixaId, faixaNome, albumNome } = req.body || {};
+  if (!appId || !faixaId) {
+    return res.status(400).json({ erro: 'appId e faixaId são obrigatórios.' });
+  }
+  try {
+    await getFirestore().collection('plays').add({
+      appId: String(appId),
+      faixaId: String(faixaId),
+      faixaNome: String(faixaNome || ''),
+      albumNome: String(albumNome || ''),
+      timestamp: Firestore.FieldValue.serverTimestamp(),
+    });
+    return res.json({ ok: true });
+  } catch (erro) {
+    console.error('Erro em /registrar-play:', erro);
+    return res.status(500).json({ erro: 'Falha ao registrar o play.' });
+  }
+});
+
+/**
+ * Resumo pro topo do painel — junta o último resultado de /gerar-cache
+ * (guardado no Firestore) com a contagem de dispositivos da planilha.
+ */
+app.get('/api/resumo', async (req, res) => {
+  if (!chavePainelValida(req)) return res.status(403).json({ erro: 'Chave ausente ou incorreta.' });
+  try {
+    const db = getFirestore();
+    const doc = await db.collection('estado').doc('biblioteca').get();
+    const biblioteca = doc.exists ? doc.data() : null;
+
+    const historicoSnap = await db
+      .collection('historicoBiblioteca')
+      .orderBy('geradoEm', 'desc')
+      .limit(30)
+      .get();
+    const historico = historicoSnap.docs
+      .map((d) => d.data())
+      .reverse(); // mais antigo primeiro, pro gráfico
+
+    const sheets = await getSheetsClient();
+    const leitura = await sheets.spreadsheets.values.get({
+      spreadsheetId: PLANILHA_ID,
+      range: `${ABA_NOME}!A:D`,
+    });
+    const linhas = (leitura.data.values || []).slice(1);
+    const liberados = linhas.filter(
+      (l) => String(l[1] || '').trim().toLowerCase() === 'liberado'
+    ).length;
+
+    return res.json({
+      biblioteca,
+      historico,
+      dispositivos: {
+        liberados,
+        bloqueados: linhas.length - liberados,
+        total: linhas.length,
+      },
+    });
+  } catch (erro) {
+    console.error('Erro em /api/resumo:', erro);
+    return res.status(500).json({ erro: 'Falha ao carregar o resumo.' });
+  }
+});
+
+/**
+ * Lista completa de dispositivos/usuários da planilha, com o engajamento
+ * de cada um (últimos 14 dias) quando disponível — pro painel.
+ */
+app.get('/api/usuarios', async (req, res) => {
+  if (!chavePainelValida(req)) return res.status(403).json({ erro: 'Chave ausente ou incorreta.' });
+  try {
+    const sheets = await getSheetsClient();
+    const leitura = await sheets.spreadsheets.values.get({
+      spreadsheetId: PLANILHA_ID,
+      range: `${ABA_NOME}!A:D`,
+    });
+    const linhas = (leitura.data.values || []).slice(1);
+    const usuarios = linhas
+      .filter((l) => l[0])
+      .map((l) => ({
+        appId: l[0],
+        status: String(l[1] || '').trim(),
+        nome: l[2] || '',
+        dataLiberacao: l[3] || '',
+      }));
+
+    let porUsuario = {};
+    try {
+      porUsuario = await agregarEngajamentoPorUsuario();
+    } catch (erroEngajamento) {
+      console.error('Aviso: falha ao juntar engajamento em /api/usuarios (não bloqueia):', erroEngajamento);
+    }
+
+    usuarios.forEach((u) => {
+      const info = porUsuario[u.appId];
+      u.totalPlays14d = info ? info.totalPlays : 0;
+      u.faixaFavorita = info ? info.faixaFavorita : null;
+    });
+
+    return res.json({ usuarios });
+  } catch (erro) {
+    console.error('Erro em /api/usuarios:', erro);
+    return res.status(500).json({ erro: 'Falha ao carregar usuários.' });
+  }
+});
+
+/**
+ * Libera um App_ID (muda Status pra "Liberado" na planilha) — ação do
+ * botão "Liberar" no painel.
+ */
+app.post('/api/liberar', async (req, res) => {
+  if (!chavePainelValida(req)) return res.status(403).json({ erro: 'Chave ausente ou incorreta.' });
+  const { appId } = req.body || {};
+  if (!appId) return res.status(400).json({ erro: 'appId é obrigatório.' });
+  try {
+    const sheets = await getSheetsClient();
+    const range = `${ABA_NOME}!A:D`;
+    const leitura = await sheets.spreadsheets.values.get({ spreadsheetId: PLANILHA_ID, range });
+    const linhas = leitura.data.values || [];
+
+    let linhaEncontrada = -1;
+    for (let i = 1; i < linhas.length; i++) {
+      if (linhas[i][0] === appId) {
+        linhaEncontrada = i;
+        break;
+      }
+    }
+    if (linhaEncontrada === -1) {
+      return res.status(404).json({ erro: 'appId não encontrado.' });
+    }
+
+    const numeroLinha = linhaEncontrada + 1; // planilha é 1-indexed
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: PLANILHA_ID,
+      range: `${ABA_NOME}!B${numeroLinha}`,
+      valueInputOption: 'RAW',
+      requestBody: { values: [['Liberado']] },
+    });
+    return res.json({ ok: true });
+  } catch (erro) {
+    console.error('Erro em /api/liberar:', erro);
+    return res.status(500).json({ erro: 'Falha ao liberar o dispositivo.' });
+  }
+});
+
+/**
+ * Busca os plays dos últimos `dias` no Firestore. Volume esperado é
+ * baixo (uso pessoal/família), então agrega tudo em memória — sem
+ * precisar de contadores pré-computados nesse tamanho de uso.
+ */
+async function buscarPlaysRecentes(dias) {
+  const desde = new Date(Date.now() - dias * 24 * 60 * 60 * 1000);
+  const snap = await getFirestore()
+    .collection('plays')
+    .where('timestamp', '>=', desde)
+    .get();
+  const plays = [];
+  snap.forEach((doc) => {
+    const d = doc.data();
+    if (!d.timestamp || !d.timestamp.toDate) return;
+    plays.push({
+      appId: d.appId,
+      faixaId: d.faixaId,
+      faixaNome: d.faixaNome || d.faixaId,
+      data: d.timestamp.toDate(),
+    });
+  });
+  return plays;
+}
+
+/**
+ * Agrega, por App_ID, total de plays e faixa favorita nos últimos 14
+ * dias — usado por /api/usuarios pra enriquecer a lista.
+ */
+async function agregarEngajamentoPorUsuario() {
+  const plays = await buscarPlaysRecentes(14);
+  const porUsuario = {};
+  plays.forEach((p) => {
+    if (!porUsuario[p.appId]) porUsuario[p.appId] = { totalPlays: 0, faixas: {} };
+    porUsuario[p.appId].totalPlays += 1;
+    const faixas = porUsuario[p.appId].faixas;
+    faixas[p.faixaId] = faixas[p.faixaId] || { nome: p.faixaNome, count: 0 };
+    faixas[p.faixaId].count += 1;
+  });
+
+  const resultado = {};
+  Object.entries(porUsuario).forEach(([appId, info]) => {
+    let favorita = null;
+    Object.values(info.faixas).forEach((f) => {
+      if (!favorita || f.count > favorita.count) favorita = f;
+    });
+    resultado[appId] = {
+      totalPlays: info.totalPlays,
+      faixaFavorita: favorita ? favorita.nome : null,
+    };
+  });
+  return resultado;
+}
+
+/**
+ * Engajamento agregado pro painel: plays por dia (14 dias), faixas mais
+ * tocadas (14 dias) e usuários ativos hoje.
+ */
+app.get('/api/engajamento', async (req, res) => {
+  if (!chavePainelValida(req)) return res.status(403).json({ erro: 'Chave ausente ou incorreta.' });
+  try {
+    const plays = await buscarPlaysRecentes(14);
+
+    const porDia = {};
+    const porFaixa = {};
+    const usuariosHoje = new Set();
+    const hojeStr = new Date().toISOString().slice(0, 10);
+
+    plays.forEach((p) => {
+      const diaStr = p.data.toISOString().slice(0, 10);
+      porDia[diaStr] = (porDia[diaStr] || 0) + 1;
+      if (diaStr === hojeStr) usuariosHoje.add(p.appId);
+
+      porFaixa[p.faixaId] = porFaixa[p.faixaId] || { faixaNome: p.faixaNome, count: 0 };
+      porFaixa[p.faixaId].count += 1;
+    });
+
+    const playsPorDia = Object.entries(porDia)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([dia, total]) => ({ dia, total }));
+
+    const topFaixas = Object.values(porFaixa)
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 8);
+
+    return res.json({
+      playsPorDia,
+      topFaixas,
+      usuariosAtivosHoje: usuariosHoje.size,
+      totalPlays14d: plays.length,
+    });
+  } catch (erro) {
+    console.error('Erro em /api/engajamento:', erro);
+    return res.status(500).json({ erro: 'Falha ao carregar engajamento.' });
+  }
+});
+
+/**
+ * A página do painel em si (arquivo estático em public/painel.html). A
+ * página faz as chamadas de API do lado do navegador, repassando a
+ * chave que veio na própria URL.
+ */
+app.get('/painel', (req, res) => {
+  if (!chavePainelValida(req)) {
+    return res.status(403).send('Acesso negado — chave ausente ou incorreta. Use /painel?chave=SUACHAVE');
+  }
+  res.sendFile(path.join(__dirname, 'public', 'painel.html'));
 });
 
 app.get('/', (_req, res) => {

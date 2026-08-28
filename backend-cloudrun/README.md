@@ -108,6 +108,60 @@ fazia antes — ele sobrescreve o mesmo arquivo de novo, e o app volta a
 funcionar com a versão gerada por ele. `/gerar-cache` só fica sem uso, sem
 custo (Cloud Run só cobra pelo que é efetivamente chamado).
 
+## Painel administrativo (29/08/2026)
+
+Além de `/validar`, `/cache` e `/gerar-cache`, agora tem um painel web em
+`/painel` — biblioteca, dispositivos pendentes de liberação (com botão
+"Liberar" direto ali), lista de usuários, e engajamento (faixas mais
+tocadas, plays por dia), alimentado por eventos que o app Flutter passou
+a registrar a cada play (`POST /registrar-play`).
+
+Passos extras (além dos 1-8 acima) pra colocar isso no ar:
+
+9. **Criar um banco Firestore** no projeto (Native mode), se ainda não
+   existir:
+   ```
+   gcloud firestore databases create --location=us-central1
+   ```
+   (`us-central1` combina com a região do Cloud Run já usada — não muda o
+   custo, mas evita latência entre serviços.)
+
+10. **Dar permissão de Firestore pra conta de serviço** `sonora-backend`
+    (o papel "Cloud Datastore User" cobre leitura e escrita no Firestore):
+    ```
+    gcloud projects add-iam-policy-binding sonora-506315 `
+      --member="serviceAccount:sonora-backend@sonora-506315.iam.gserviceaccount.com" `
+      --role="roles/datastore.user"
+    ```
+
+11. **Escolher uma senha pra `PAINEL_CHAVE`** (mesma ideia da
+    `GERAR_CACHE_CHAVE` — protege `/painel` e as rotas `/api/*` de
+    qualquer um achar a URL à toa; `/registrar-play` fica sem trava de
+    propósito, é chamado o tempo todo pelo app).
+
+12. **Redeploy** incluindo a `PAINEL_CHAVE` nas env vars (repare que a
+    lista inteira de `--set-env-vars` precisa estar entre **aspas
+    duplas** no PowerShell — sem isso as vírgulas se perdem e as
+    variáveis vêm todas erradas, ver nota de 28/08/2026 no
+    `sonora_deploy.md`):
+    ```
+    gcloud run deploy sonora-backend `
+      --source . `
+      --region us-central1 `
+      --allow-unauthenticated `
+      --timeout 3600 `
+      --memory 1Gi `
+      --service-account sonora-backend@sonora-506315.iam.gserviceaccount.com `
+      --set-env-vars "PLANILHA_ID=1UyH7VLTSU3pIRXH1DOiPSBB1vavy_qyRo65y07DEyiE,ABA_NOME=Untitled,CACHE_FILE_ID=1Ks8PvbUfQqg75lHty2qb9bnoIvt7c4pP,DRIVE_API_KEY=AIzaSyA8gpiXcOLxKjGSVXuO_iF5NQRnKHwLwno,PASTA_BIBLIOTECA_ID=14D3JK1VVyL3nyDNroK0s2vSLMC0H16I6,GERAR_CACHE_CHAVE=sonora2026xyz,PAINEL_CHAVE=escolha-outra-senha-aqui"
+    ```
+
+13. **Abrir o painel**: `<URL>/painel?chave=SUA_PAINEL_CHAVE`. Na primeira
+    vez, "Biblioteca" e "Crescimento" ficam vazios até rodar
+    `/gerar-cache` de novo pelo menos uma vez (é o que grava o resumo no
+    Firestore) — e "Engajamento" fica vazio até o app novo (1.7.0+12 ou
+    mais recente, com o registro de play) rodar de verdade em algum
+    aparelho.
+
 ## Quando quiser migrar o app pra usar `/validar` e `/cache` deste backend
 
 Só troca o valor de `AppConstants.backendBaseUrl` em
