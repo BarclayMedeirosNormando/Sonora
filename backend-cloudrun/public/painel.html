@@ -251,7 +251,10 @@
   function lineChart(el, data, opts) {
     if (!data || data.length === 0) { el.innerHTML = '<div class="empty-note">Ainda não há dados suficientes.</div>'; return; }
     if (data.length === 1) {
-      el.innerHTML = `<div class="empty-note">Só uma geração registrada até agora (${fmt(data[0].v)}). O gráfico aparece a partir da segunda.</div>`;
+      const msg = opts.mensagemUmPonto
+        ? opts.mensagemUmPonto(data[0].v)
+        : `Só um ponto registrado até agora (${fmt(data[0].v)}). O gráfico aparece a partir do segundo.`;
+      el.innerHTML = `<div class="empty-note">${msg}</div>`;
       return;
     }
     const w = 480, h = 190, padL = 44, padR = 12, padT = 12, padB = 26;
@@ -386,7 +389,7 @@
 
       // Crescimento
       const growth = (resumo.historico || []).map(h => ({ label: new Date(h.geradoEm).toLocaleDateString('pt-BR', {day:'2-digit', month:'2-digit'}), v: h.totalFaixas }));
-      lineChart(document.getElementById('chart-growth'), growth, { color: color('--series-1'), wash: color('--series-1-wash') });
+      lineChart(document.getElementById('chart-growth'), growth, { color: color('--series-1'), wash: color('--series-1-wash'), mensagemUmPonto: v => `Só uma geração registrada até agora (${fmt(v)}). O gráfico aparece a partir da segunda.` });
 
       // Dispositivos
       compareBar(document.getElementById('chart-devices'), { v: resumo.dispositivos.liberados }, { v: resumo.dispositivos.bloqueados });
@@ -465,7 +468,7 @@
       const topFaixas = (engajamento.topFaixas || []).map(f => ({ label: f.faixaNome, v: f.count }));
       hBarChart(document.getElementById('chart-top-tracks'), topFaixas, { color: color('--series-2') });
       const playsPorDia = (engajamento.playsPorDia || []).map(p => ({ label: fmtDiaCurto(p.dia), v: p.total }));
-      lineChart(document.getElementById('chart-plays'), playsPorDia, { color: color('--series-2'), wash: color('--series-2-wash') });
+      lineChart(document.getElementById('chart-plays'), playsPorDia, { color: color('--series-2'), wash: color('--series-2-wash'), mensagemUmPonto: v => `Só um dia com plays registrado até agora (${fmt(v)}). O gráfico aparece a partir do segundo dia.` });
 
     } catch (err) {
       showBanner('error', `<b>Falha ao carregar o painel:</b> ${err.message}. Confira se a URL tem <code>?chave=SUACHAVE</code> correta.`);
