@@ -94,7 +94,9 @@ class ApiService {
   }) async {
     try {
       final uri = Uri.parse('${AppConstants.cloudRunBaseUrl}/registrar-play');
-      await http
+      // ignore: avoid_print
+      print('[SONORA-DEBUG] registrarPlay: chamando $uri (faixa=$faixaNome)');
+      final resposta = await http
           .post(
             uri,
             headers: {'Content-Type': 'application/json'},
@@ -106,7 +108,11 @@ class ApiService {
             }),
           )
           .timeout(const Duration(seconds: 8));
-    } catch (_) {
+      // ignore: avoid_print
+      print('[SONORA-DEBUG] registrarPlay: resposta HTTP ${resposta.statusCode} — ${resposta.body}');
+    } catch (e) {
+      // ignore: avoid_print
+      print('[SONORA-DEBUG] registrarPlay: ERRO — $e');
       // Telemetria — nunca deve afetar a reprodução.
     }
   }

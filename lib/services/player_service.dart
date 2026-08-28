@@ -109,13 +109,20 @@ class PlayerService extends ChangeNotifier with WidgetsBindingObserver {
   /// engole qualquer erro sozinho).
   void _registrarPlayDaFaixaAtual() {
     final faixa = faixaAtual;
+    // ignore: avoid_print
+    print('[SONORA-DEBUG] _registrarPlayDaFaixaAtual chamado — faixa=${faixa?.displayTitle}');
     if (faixa == null) return;
     DeviceIdService.getOrCreateDeviceId().then((appId) {
+      // ignore: avoid_print
+      print('[SONORA-DEBUG] appId=$appId — chamando ApiService.registrarPlay');
       ApiService.registrarPlay(
         appId: appId,
         faixaId: faixa.id,
         faixaNome: faixa.displayTitle,
       );
+    }).catchError((e) {
+      // ignore: avoid_print
+      print('[SONORA-DEBUG] ERRO ao pegar deviceId: $e');
     });
   }
 
