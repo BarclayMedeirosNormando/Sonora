@@ -1,0 +1,4 @@
+node_modules/
+node_modules.stale_*/
+package-lock.json.stale_*
+npm-debug.log

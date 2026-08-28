@@ -16,8 +16,17 @@
 // não foi alterado). Só troca quando o Barclay decidir migrar de vez —
 // ver README.md nesta pasta pro passo a passo de deploy e de como (e
 // quando) apontar o app pra cá.
+//
+// GET /gerar-cache?chave=XXX -> gera o cache da biblioteca inteira e
+//   SOBRESCREVE o mesmo arquivo que backend/CacheBiblioteca.gs (Apps
+//   Script) já gera hoje — o app não precisa saber quem escreveu. Existe
+//   porque o Apps Script tem limite de 6 min por execução, o que não vai
+//   dar conta de uma biblioteca de ~200 mil faixas (testado em
+//   28/08/2026 com ~2.900 faixas, biblioteca ainda crescendo aos poucos).
+//   Acionado manualmente pelo Barclay (não é chamado pelo app).
 // ============================================================
 
+const stream = require('stream');
 const express = require('express');
 
 const app = express();
@@ -31,7 +40,41 @@ const ABA_NOME = process.env.ABA_NOME || 'Página1'; // conferir o nome real da 
 const CACHE_FILE_ID = process.env.CACHE_FILE_ID || '1Ks8PvbUfQqg75lHty2qb9bnoIvt7c4pP';
 const DRIVE_API_KEY = process.env.DRIVE_API_KEY || '';
 
+// Pasta raiz da biblioteca ("Sonora") que /gerar-cache percorre.
+const PASTA_BIBLIOTECA_ID = process.env.PASTA_BIBLIOTECA_ID || '14D3JK1VVyL3nyDNroK0s2vSLMC0H16I6';
+// Trava de segurança contra pastas aninhadas demais por engano.
+const PROFUNDIDADE_MAX = 8;
+// Quantas subpastas processar em paralelo por nível — equilibra
+// velocidade (mais rápido que o Apps Script, que é sempre sequencial)
+// com não estourar a cota do Drive de uma vez só.
+const CONCORRENCIA_GERAR_CACHE = 6;
+// Senha simples pra evitar que qualquer um na internet aperte
+// /gerar-cache e gaste cota/reescreva o arquivo — não é pra ser um
+// sistema de auth de verdade, só uma trava básica.
+const GERAR_CACHE_CHAVE = process.env.GERAR_CACHE_CHAVE || '';
+
 let sheetsClientPromise = null;
+let driveClientPromise = null;
+
+/**
+ * Cliente autenticado do Google Drive API, mesma identidade da conta de
+ * serviço usada pro Sheets. A conta de serviço precisa ter acesso de
+ * Editor à pasta "Musicas" (pai de "Sonora", onde fica o arquivo de
+ * cache) — ver README.md.
+ */
+async function getDriveClient() {
+  if (!driveClientPromise) {
+    driveClientPromise = (async () => {
+      const { google } = require('googleapis');
+      const auth = new google.auth.GoogleAuth({
+        scopes: ['https://www.googleapis.com/auth/drive'],
+      });
+      const authClient = await auth.getClient();
+      return google.drive({ version: 'v3', auth: authClient });
+    })();
+  }
+  return driveClientPromise;
+}
 
 /**
  * Cliente autenticado do Google Sheets API, usando a identidade da conta
@@ -123,8 +166,151 @@ app.get('/cache', async (req, res) => {
   }
 });
 
+/**
+ * Lista subpastas e arquivos de uma pasta do Drive (paginando se precisar
+ * — mais de 1000 itens numa pasta só).
+ */
+async function listarFilhos(drive, pastaId) {
+  const subpastas = [];
+  const arquivos = [];
+  let pageToken;
+  do {
+    const resposta = await drive.files.list({
+      q: `'${pastaId}' in parents and trashed = false`,
+      fields: 'nextPageToken, files(id, name, mimeType, size, createdTime)',
+      pageSize: 1000,
+      pageToken,
+    });
+    for (const item of resposta.data.files || []) {
+      if (item.mimeType === 'application/vnd.google-apps.folder') {
+        subpastas.push(item);
+      } else {
+        arquivos.push(item);
+      }
+    }
+    pageToken = resposta.data.nextPageToken || undefined;
+  } while (pageToken);
+  return { subpastas, arquivos };
+}
+
+/**
+ * Gera o cache da biblioteca inteira, no MESMO formato que
+ * backend/CacheBiblioteca.gs já produz ({ geradoEm, totalAlbuns, albuns,
+ * arvore }), e sobrescreve o mesmo arquivo do Drive — pra que o app
+ * Flutter (que já lê esse arquivo) não precise de nenhuma mudança pra
+ * testar essa geração alternativa.
+ */
+app.get('/gerar-cache', async (req, res) => {
+  if (GERAR_CACHE_CHAVE && req.query.chave !== GERAR_CACHE_CHAVE) {
+    return res.status(403).json({ erro: 'Chave ausente ou incorreta.' });
+  }
+
+  const inicio = Date.now();
+  try {
+    const drive = await getDriveClient();
+    const albuns = [];
+    const arvore = [];
+
+    async function percorrer(pastaId, paiId, nomePasta, criadoEmPasta, profundidade) {
+      if (profundidade > PROFUNDIDADE_MAX) return;
+
+      const { subpastas, arquivos } = await listarFilhos(drive, pastaId);
+
+      let temMp3 = false;
+      let capaId = null;
+      for (const arquivo of arquivos) {
+        const nome = arquivo.name || '';
+        const ehMp3 =
+          nome.toLowerCase().endsWith('.mp3') || arquivo.mimeType === 'audio/mpeg';
+        if (ehMp3) {
+          temMp3 = true;
+          arvore.push({
+            tipo: 'faixa',
+            id: arquivo.id,
+            name: nome,
+            paiId: pastaId,
+            size: Number(arquivo.size || 0),
+          });
+        } else if (capaId === null && (arquivo.mimeType || '').startsWith('image/')) {
+          capaId = arquivo.id;
+        }
+      }
+
+      if (paiId !== null) {
+        arvore.push({
+          tipo: 'pasta',
+          id: pastaId,
+          name: nomePasta,
+          paiId,
+          capaId,
+          criadoEm: criadoEmPasta,
+        });
+      }
+
+      if (temMp3) {
+        albuns.push({ id: pastaId, name: nomePasta, capaId, criadoEm: criadoEmPasta });
+      }
+
+      // Processa subpastas em lotes paralelos — bem mais rápido que o
+      // Apps Script (que é sempre sequencial), sem abrir concorrência
+      // demais de uma vez.
+      for (let i = 0; i < subpastas.length; i += CONCORRENCIA_GERAR_CACHE) {
+        const lote = subpastas.slice(i, i + CONCORRENCIA_GERAR_CACHE);
+        await Promise.all(
+          lote.map((sub) =>
+            percorrer(sub.id, pastaId, sub.name, sub.createdTime, profundidade + 1)
+          )
+        );
+      }
+    }
+
+    await percorrer(PASTA_BIBLIOTECA_ID, null, null, null, 0);
+
+    albuns.sort((a, b) => new Date(b.criadoEm).getTime() - new Date(a.criadoEm).getTime());
+
+    const conteudo = JSON.stringify({
+      geradoEm: new Date().toISOString(),
+      geradoPor: 'cloud-run',
+      totalAlbuns: albuns.length,
+      albuns,
+      arvore,
+    });
+
+    // Sobrescreve o mesmo arquivo que o Apps Script gera.
+    await drive.files.update({
+      fileId: CACHE_FILE_ID,
+      media: {
+        mimeType: 'application/json',
+        body: stream.Readable.from([conteudo]),
+      },
+    });
+    // Garante que continua público de leitura (idempotente, igual o
+    // CacheBiblioteca.gs faz).
+    await drive.permissions.create({
+      fileId: CACHE_FILE_ID,
+      requestBody: { role: 'reader', type: 'anyone' },
+    });
+
+    return res.json({
+      ok: true,
+      totalAlbuns: albuns.length,
+      totalNos: arvore.length,
+      duracaoMs: Date.now() - inicio,
+    });
+  } catch (erro) {
+    console.error('Erro em /gerar-cache:', erro);
+    return res.status(500).json({
+      erro: 'Falha ao gerar o cache.',
+      detalhe: String((erro && erro.message) || erro),
+      duracaoMs: Date.now() - inicio,
+    });
+  }
+});
+
 app.get('/', (_req, res) => {
-  res.send('Sonora backend (Cloud Run) no ar. Endpoints: /validar?id=XXX e /cache');
+  res.send(
+    'Sonora backend (Cloud Run) no ar. Endpoints: /validar?id=XXX, /cache e /gerar-cache?chave=XXX'
+  );
 });
 
 app.listen(PORT, () => {
