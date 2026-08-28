@@ -124,11 +124,26 @@ class PlayerService extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   Future<void> proxima() async {
-    if (_player.hasNext) await _player.seekToNext();
+    if (!_player.hasNext) return;
+    try {
+      await _player.seekToNext().timeout(const Duration(seconds: 15));
+    } catch (_) {
+      // Sem isso, uma falha ao carregar a próxima faixa (rede instável,
+      // Wi-Fi bloqueando o Drive momentaneamente etc) ficava em silêncio
+      // total: sem áudio, sem duração aparecendo, sem aviso nenhum — e
+      // pular de novo ou voltar não resolvia, porque o problema era no
+      // carregamento em si, não em qual faixa estava selecionada.
+      _avisarErroDeReproducao();
+    }
   }
 
   Future<void> anterior() async {
-    if (_player.hasPrevious) await _player.seekToPrevious();
+    if (!_player.hasPrevious) return;
+    try {
+      await _player.seekToPrevious().timeout(const Duration(seconds: 15));
+    } catch (_) {
+      _avisarErroDeReproducao();
+    }
   }
 
   Future<void> seekPara(Duration posicao) async {
