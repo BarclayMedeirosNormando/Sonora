@@ -16,6 +16,8 @@ dependencies:
 
   # Player de áudio
   just_audio: ^0.9.42
+  just_audio_background: ^0.0.1-beta.17
+  audio_service: any
 
   # Persistência local (cache do App_ID, preferências)
   shared_preferences: ^2.3.2

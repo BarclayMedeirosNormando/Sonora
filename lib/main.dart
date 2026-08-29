@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:just_audio_background/just_audio_background.dart';
 import 'package:provider/provider.dart';
 
 import 'core/app_keys.dart';
@@ -13,6 +14,15 @@ void main() async {
   // Precisa estar pronto antes de usar SharedPreferences/plugins abaixo,
   // já que main() agora faz await antes do runApp().
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Habilita o serviço de mídia em primeiro plano do Android (notificação
+  // de player + wake lock) — sem isso, o playback é suspenso pelo sistema
+  // quando a tela bloqueia/o app vai pra segundo plano.
+  await JustAudioBackground.init(
+    androidNotificationChannelId: 'com.barclaymedeiros.sonora.audio',
+    androidNotificationChannelName: 'Reprodução Sonora',
+    androidNotificationOngoing: true,
+  );
 
   // Criado antes do MultiProvider pra poder ser injetado tanto no próprio
   // Provider (telas usam context.watch/read normalmente) quanto direto no

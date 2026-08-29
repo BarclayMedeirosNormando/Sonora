@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:audio_service/audio_service.dart';
 import 'package:flutter/material.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -74,11 +75,21 @@ class PlayerService extends ChangeNotifier with WidgetsBindingObserver {
   /// (ouvir offline) quando existir, senão cai pro streaming direto do
   /// Drive de sempre.
   AudioSource _fonteDe(Track track) {
+    // MediaItem alimenta a notificação de mídia do just_audio_background
+    // (título exibido, ícone de play/pause no lockscreen etc).
+    final tag = MediaItem(
+      id: track.id,
+      title: track.displayTitle,
+      album: 'Sonora',
+    );
     final local = _downloadService?.caminhoLocal(track.id);
     if (local != null) {
-      return AudioSource.uri(Uri.file(local));
+      return AudioSource.uri(Uri.file(local), tag: tag);
     }
-    return AudioSource.uri(Uri.parse(track.streamUrl(AppConstants.driveApiKey)));
+    return AudioSource.uri(
+      Uri.parse(track.streamUrl(AppConstants.driveApiKey)),
+      tag: tag,
+    );
   }
 
   /// Começa a tocar uma fila de faixas a partir de um índice (ex: as faixas
