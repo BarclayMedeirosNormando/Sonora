@@ -2,7 +2,11 @@
 class AppConstants {
   AppConstants._();
 
-  /// URL do Web App do Apps Script (backend).
+  /// URL do Web App do Apps Script (backend). Desde 29/08/2026 só é
+  /// usada pelo endpoint legado action=navegar (não chamado pela
+  /// navegação normal do app, ver LibraryCacheService) — validar/cache
+  /// migraram pro Cloud Run (cloudRunBaseUrl abaixo), pra tirar de vez a
+  /// dependência do limite de 30 execuções simultâneas do Apps Script.
   static const String backendBaseUrl =
       'https://script.google.com/macros/s/AKfycbxBSzA46eAFHaT_ckpayBL9vc6BjxNrABmD-yoX9ACVKZlYG1uNdGm4JrIa9CHAa8BM/exec';
 
@@ -30,11 +34,12 @@ class AppConstants {
   /// não mostram nada do cache ainda, sem quebrar o resto do app.
   static const String libraryCacheFileId = '1Ks8PvbUfQqg75lHty2qb9bnoIvt7c4pP';
 
-  /// URL base do backend alternativo em Google Cloud Run (item 4 do
-  /// plano de escala — ver sonora_deploy.md nas notas do projeto). Hoje
-  /// só é usada pra registrar plays (telemetria pro painel
-  /// administrativo, seção Engajamento) — validar/cache continuam no
-  /// Apps Script (backendBaseUrl acima), sem mudança nenhuma aí.
+  /// URL base do backend em Google Cloud Run (item 4 do plano de escala
+  /// — ver sonora_deploy.md nas notas do projeto). Desde 29/08/2026 é
+  /// quem atende validar (checagem de acesso) e cache (biblioteca inteira
+  /// no Flutter Web), além de registrar plays (telemetria pro painel
+  /// administrativo) — tira a dependência do limite de 30 execuções
+  /// simultâneas do Apps Script pros dois endpoints mais usados.
   static const String cloudRunBaseUrl =
       'https://sonora-backend-99445390129.us-central1.run.app';
 

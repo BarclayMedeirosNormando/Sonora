@@ -12,8 +12,8 @@ class ApiService {
   /// action=validar&id=XXX
   static Future<bool> validarId(String appId) async {
     return _comRetentativas(() async {
-      final uri = Uri.parse(AppConstants.backendBaseUrl).replace(
-        queryParameters: {'action': 'validar', 'id': appId},
+      final uri = Uri.parse('${AppConstants.cloudRunBaseUrl}/validar').replace(
+        queryParameters: {'id': appId},
       );
       final response = await http.get(uri);
       if (response.statusCode != 200) {
@@ -59,8 +59,7 @@ class ApiService {
   static Future<Map<String, dynamic>> obterCacheBiblioteca() async {
     return _comRetentativas(() async {
       final uri = kIsWeb
-          ? Uri.parse(AppConstants.backendBaseUrl)
-              .replace(queryParameters: {'action': 'cache'})
+          ? Uri.parse('${AppConstants.cloudRunBaseUrl}/cache')
           : Uri.parse(
               'https://www.googleapis.com/drive/v3/files/'
               '${AppConstants.libraryCacheFileId}'
