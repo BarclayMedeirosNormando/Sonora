@@ -6,6 +6,7 @@ import '../core/theme.dart';
 import '../models/album.dart';
 import '../services/historico_service.dart';
 import '../services/library_cache_service.dart';
+import '../widgets/album_skeleton.dart';
 import 'package:provider/provider.dart';
 import 'folder_screen.dart';
 
@@ -75,7 +76,7 @@ class _SearchScreenState extends State<SearchScreen> {
         future: _todosFuture,
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
+            return const AlbumListSkeleton();
           }
 
           if (snapshot.hasError) {

@@ -88,3 +88,40 @@ class AlbumRowSkeleton extends StatelessWidget {
     );
   }
 }
+
+/// Lista vertical de skeletons no formato de linha (thumbnail pequena +
+/// uma linha de texto), imitando os resultados de busca do SearchScreen —
+/// diferente dos outros dois, que imitam cards de álbum em grid/carrossel.
+class AlbumListSkeleton extends StatelessWidget {
+  final int quantidade;
+
+  const AlbumListSkeleton({super.key, this.quantidade = 8});
+
+  @override
+  Widget build(BuildContext context) {
+    return Shimmer.fromColors(
+      baseColor: AppTheme.surfaceHigh,
+      highlightColor: AppTheme.surface,
+      child: ListView.builder(
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        physics: const NeverScrollableScrollPhysics(),
+        itemCount: quantidade,
+        itemBuilder: (context, index) => Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          child: Row(
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(6),
+                child: Container(width: 48, height: 48, color: Colors.white),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Container(height: 12, color: Colors.white),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
