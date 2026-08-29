@@ -4,16 +4,23 @@ import 'package:flutter/material.dart';
 import '../core/constants.dart';
 import '../core/theme.dart';
 import '../models/album.dart';
+import '../models/track.dart';
 import '../services/historico_service.dart';
 import '../services/library_cache_service.dart';
-import '../widgets/album_skeleton.dart';
+import '../services/player_service.dart';
 import 'package:provider/provider.dart';
 import 'folder_screen.dart';
+import '../widgets/album_skeleton.dart';
 
-/// Busca por nome de álbum/artista na biblioteca inteira, usando o cache
-/// pré-computado (backend/CacheBiblioteca.gs) — não faz nenhuma chamada ao
-/// Apps Script, então não pesa no backend nem depende de navegar pasta por
-/// pasta pra achar algo.
+/// Máximo de faixas mostradas na busca por música — sem essa trava, um
+/// termo muito genérico (ex: uma letra só) numa biblioteca de centenas de
+/// milhares de faixas listaria tudo de uma vez.
+const _maxResultadosFaixas = 40;
+
+/// Busca por nome de álbum/artista OU de faixa individual na biblioteca
+/// inteira, usando o cache pré-computado (backend/CacheBiblioteca.gs) —
+/// não faz nenhuma chamada ao Apps Script, então não pesa no backend nem
+/// depende de navegar pasta por pasta pra achar algo.
 class SearchScreen extends StatefulWidget {
   const SearchScreen({super.key});
 
@@ -56,6 +63,19 @@ class _SearchScreenState extends State<SearchScreen> {
     return resultado;
   }
 
+  Future<void> _tocarFaixa(BuildContext context, Track faixa) async {
+    final paiId = faixa.paiId;
+    if (paiId == null) return;
+    // Busca as faixas irmãs (mesmo álbum) pra montar uma fila de verdade
+    // — igual à navegação normal por pasta — em vez de tocar só essa
+    // faixa isolada, sem próxima/anterior fazendo sentido nenhum.
+    final conteudo = await LibraryCacheService.obterConteudoDaPasta(paiId);
+    final indice = conteudo.faixas.indexWhere((f) => f.id == faixa.id);
+    if (indice == -1 || !context.mounted) return;
+    context.read<PlayerService>().tocarFila(conteudo.faixas, indice);
+    context.read<HistoricoService>().registrarFaixa(conteudo.faixas[indice]);
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -65,7 +85,7 @@ class _SearchScreenState extends State<SearchScreen> {
           autofocus: true,
           style: const TextStyle(color: AppTheme.textPrimary),
           decoration: const InputDecoration(
-            hintText: 'Buscar artista ou álbum...',
+            hintText: 'Buscar artista, álbum ou música...',
             hintStyle: TextStyle(color: AppTheme.textSecondary),
             border: InputBorder.none,
           ),
@@ -126,11 +146,18 @@ class _SearchScreenState extends State<SearchScreen> {
           }
 
           final termoNormalizado = _normalizar(_termo.trim());
-          final resultados = todos
+
+          final albunsCorrespondentes = todos
               .where((a) => _normalizar(a.displayName).contains(termoNormalizado))
               .toList();
 
-          if (resultados.isEmpty) {
+          final todasFaixas = LibraryCacheService.faixasSincronas ?? const <Track>[];
+          final faixasCorrespondentes = todasFaixas
+              .where((f) => _normalizar(f.displayTitle).contains(termoNormalizado))
+              .take(_maxResultadosFaixas)
+              .toList();
+
+          if (albunsCorrespondentes.isEmpty && faixasCorrespondentes.isEmpty) {
             return const Center(
               child: Text(
                 'Nada encontrado.',
@@ -139,9 +166,22 @@ class _SearchScreenState extends State<SearchScreen> {
             );
           }
 
-          return ListView.builder(
-            itemCount: resultados.length,
-            itemBuilder: (context, index) => _ResultadoTile(album: resultados[index]),
+          return ListView(
+            children: [
+              if (albunsCorrespondentes.isNotEmpty) ...[
+                const _TituloResultado('Álbuns'),
+                for (final album in albunsCorrespondentes)
+                  _ResultadoAlbumTile(album: album),
+              ],
+              if (faixasCorrespondentes.isNotEmpty) ...[
+                const _TituloResultado('Músicas'),
+                for (final faixa in faixasCorrespondentes)
+                  _ResultadoFaixaTile(
+                    faixa: faixa,
+                    onTap: () => _tocarFaixa(context, faixa),
+                  ),
+              ],
+            ],
           );
         },
       ),
@@ -149,10 +189,31 @@ class _SearchScreenState extends State<SearchScreen> {
   }
 }
 
-class _ResultadoTile extends StatelessWidget {
+class _TituloResultado extends StatelessWidget {
+  final String texto;
+
+  const _TituloResultado(this.texto);
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
+      child: Text(
+        texto,
+        style: const TextStyle(
+          color: AppTheme.textSecondary,
+          fontSize: 13,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
+    );
+  }
+}
+
+class _ResultadoAlbumTile extends StatelessWidget {
   final Album album;
 
-  const _ResultadoTile({required this.album});
+  const _ResultadoAlbumTile({required this.album});
 
   @override
   Widget build(BuildContext context) {
@@ -198,6 +259,45 @@ class _ResultadoTile extends StatelessWidget {
           ),
         );
       },
+    );
+  }
+}
+
+class _ResultadoFaixaTile extends StatelessWidget {
+  final Track faixa;
+  final VoidCallback onTap;
+
+  const _ResultadoFaixaTile({required this.faixa, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final album = faixa.paiId != null ? LibraryCacheService.albumPorId(faixa.paiId!) : null;
+
+    return ListTile(
+      leading: Container(
+        width: 48,
+        height: 48,
+        decoration: BoxDecoration(
+          color: AppTheme.surfaceHigh,
+          borderRadius: BorderRadius.circular(6),
+        ),
+        child: const Icon(Icons.music_note, color: AppTheme.accent, size: 20),
+      ),
+      title: Text(
+        faixa.displayTitle,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: const TextStyle(color: AppTheme.textPrimary),
+      ),
+      subtitle: album != null
+          ? Text(
+              album.displayName,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(color: AppTheme.textSecondary, fontSize: 12),
+            )
+          : null,
+      onTap: onTap,
     );
   }
 }

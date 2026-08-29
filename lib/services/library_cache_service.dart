@@ -156,6 +156,11 @@ class LibraryCacheService {
   /// se já tiver disponível (ex: Home não precisa aguardar carregamento).
   static List<Album>? get albunsSincronos => _albunsEmCache;
 
+  /// TODAS as faixas da biblioteca (árvore inteira, não só uma pasta) já
+  /// em cache em memória — null se ainda não carregou. Usado pela Busca
+  /// pra encontrar música por nome, além de álbum/artista.
+  static List<Track>? get faixasSincronas => _arvoreFaixasEmCache;
+
   /// Álbum (pasta) correspondente a [id], procurado no cache já carregado
   /// em memória — usado pra achar a capa da pasta que contém a faixa que
   /// está tocando agora (Track só guarda paiId, não capaId). Retorna null
