@@ -1,7 +1,7 @@
 name: sonora
 description: "Sonora - player de música com backend no Google Drive"
 publish_to: 'none'
-version: 2.0.0+13
+version: 2.1.0+14
 
 environment:
   sdk: '>=3.3.0 <4.0.0'
