@@ -169,3 +169,83 @@ Só troca o valor de `AppConstants.backendBaseUrl` em
 `/cache` no final — só a URL base), gera um novo build, e testa. Isso é
 uma decisão separada de quando ativar `/gerar-cache` — não tem pressa, os
 dois podem ser testados/ativados em momentos diferentes.
+
+## Proxy de mídia (30/08/2026) — evita bloqueio por abuso do Drive
+
+Hoje o app baixa os MP3s direto do Google Drive (`files/{id}?alt=media&key=...`).
+Isso funciona, mas o Drive tem um mecanismo de anti-abuso **separado** da
+cota normal — não documentado, disparado por padrão de acesso — que pode
+bloquear quando muita gente diferente toca a MESMA faixa popular numa
+janela curta de tempo. Risco real com a meta de ~500 clientes até o fim
+do ano.
+
+A rota nova `GET /midia/:fileId` resolve isso agindo como cache: na
+primeira vez que qualquer usuário pede uma faixa, o Cloud Run baixa do
+Drive e guarda uma cópia num bucket do Cloud Storage (ao mesmo tempo que
+já manda os bytes pro usuário, sem esperar). Da segunda vez em diante —
+qualquer usuário, qualquer aparelho — ele nem chega a bater no Drive:
+redireciona direto pra URL pública do arquivo já cacheado. Resultado: o
+Drive passa a receber no máximo 1 request por faixa, pra sempre, em vez
+de 1 por play.
+
+### O que fazer, uma vez só, pra colocar isso no ar
+
+1. **Criar o bucket** (nome sugerido, mas pode ser outro — só ajustar a
+   variável `MIDIA_BUCKET` no deploy de acordo):
+   ```
+   gcloud storage buckets create gs://sonora-midia-cache --location=us-central1
+   ```
+
+2. **Deixar os objetos do bucket públicos pra leitura** (mesmo modelo de
+   segurança que os arquivos já têm no Drive hoje — "qualquer pessoa com
+   o link" — os IDs de arquivo continuam sendo a única "trava"):
+   ```
+   gcloud storage buckets add-iam-policy-binding gs://sonora-midia-cache `
+     --member=allUsers --role=roles/storage.objectViewer
+   ```
+
+3. **Dar permissão de escrita pra conta de serviço** `sonora-backend`
+   (precisa gravar os arquivos cacheados):
+   ```
+   gcloud storage buckets add-iam-policy-binding gs://sonora-midia-cache `
+     --member="serviceAccount:sonora-backend@sonora-506315.iam.gserviceaccount.com" `
+     --role=roles/storage.objectAdmin
+   ```
+
+4. **Redeploy** incluindo a variável `MIDIA_BUCKET` (repare que a lista
+   inteira de `--set-env-vars` precisa estar entre **aspas duplas** no
+   PowerShell — ver lição de 28/08/2026 no `sonora_deploy.md`):
+   ```
+   gcloud run deploy sonora-backend `
+     --source . `
+     --region us-central1 `
+     --allow-unauthenticated `
+     --timeout 3600 `
+     --memory 1Gi `
+     --service-account sonora-backend@sonora-506315.iam.gserviceaccount.com `
+     --set-env-vars "PLANILHA_ID=1UyH7VLTSU3pIRXH1DOiPSBB1vavy_qyRo65y07DEyiE,ABA_NOME=Untitled,CACHE_FILE_ID=1Ks8PvbUfQqg75lHty2qb9bnoIvt7c4pP,DRIVE_API_KEY=AIzaSyA8gpiXcOLxKjGSVXuO_iF5NQRnKHwLwno,PASTA_BIBLIOTECA_ID=14D3JK1VVyL3nyDNroK0s2vSLMC0H16I6,GERAR_CACHE_CHAVE=sonora2026xyz,PAINEL_CHAVE=escolha-outra-senha-aqui,MIDIA_BUCKET=sonora-midia-cache"
+   ```
+
+### Como testar
+
+- **`<URL>/midia/ID_DE_ALGUMA_FAIXA`** — abra direto no navegador (pega
+  qualquer ID de arquivo MP3 do Drive). Na primeira vez deve tocar/baixar
+  normalmente (vindo do Drive, um pouco mais lento) e aparecer um objeto
+  novo em `gs://sonora-midia-cache/midia/`. Na segunda vez que abrir a
+  MESMA URL, deve ser bem mais rápido — é o redirecionamento pro cache.
+- Depois disso, testar no app de verdade: tocar uma música qualquer,
+  conferir que toca normal, e no Console do Cloud Storage ver o arquivo
+  aparecendo no bucket.
+
+### Rollback
+
+Se algo der errado, é só voltar `Track.streamUrl()` (lib/models/track.dart)
+pra montar a URL direto do Drive como antes — não precisa desfazer nada
+no bucket nem no Cloud Run, o endpoint `/midia` simplesmente fica sem uso.
+
+### Sobre as capas dos álbuns
+
+Por enquanto essa mudança cobre só o ÁUDIO (`Track.streamUrl`). As capas
+(`Album.capaUrl`) continuam vindo direto do Drive — são bem menores que os
+MP3s e menos prováveis de disparar o mesmo gatilho de abuso, mas se um dia
+virar problema, o mesmo padrão de proxy+cache dá pra estender pra elas.

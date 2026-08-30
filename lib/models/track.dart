@@ -43,10 +43,13 @@ class Track {
     );
   }
 
-  /// URL de streaming via Drive API v3 (files/{fileId}?alt=media).
-  /// Requer que o arquivo esteja compartilhado como "qualquer pessoa com o link".
-  String streamUrl(String apiKey) =>
-      'https://www.googleapis.com/drive/v3/files/$id?alt=media&key=$apiKey';
+  /// URL de streaming via o proxy de mídia no Cloud Run (não mais direto
+  /// do Drive, desde 30/08/2026 — ver sonora_deploy.md "proxy de mídia").
+  /// O proxy guarda a faixa em cache (Cloud Storage) na primeira vez que
+  /// alguém toca ela; todo mundo depois é servido do cache, sem bater no
+  /// Drive de novo — evita o gatilho de anti-abuso do Drive quando muita
+  /// gente toca a mesma faixa popular ao mesmo tempo.
+  String streamUrl(String cloudRunBaseUrl) => '$cloudRunBaseUrl/midia/$id';
 
   /// Título "limpo" pra exibição: remove a extensão .mp3 e, se existir, a
   /// mesma marca "Proprietário @..." que aparece em vários nomes de pasta

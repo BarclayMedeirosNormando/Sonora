@@ -17,6 +17,10 @@
 // ver README.md nesta pasta pro passo a passo de deploy e de como (e
 // quando) apontar o app pra cá.
 //
+// GET /midia/:fileId       -> proxy de mídia com cache no Cloud Storage
+//   (evita bater direto no Drive a cada play — ver comentário na rota,
+//   mais detalhes em sonora_deploy.md nas notas do projeto, 30/08/2026)
+//
 // GET /gerar-cache?chave=XXX -> gera o cache da biblioteca inteira e
 //   SOBRESCREVE o mesmo arquivo que backend/CacheBiblioteca.gs (Apps
 //   Script) já gera hoje — o app não precisa saber quem escreveu. Existe
@@ -41,6 +45,7 @@ const stream = require('stream');
 const path = require('path');
 const express = require('express');
 const { Firestore } = require('@google-cloud/firestore');
+const { Storage } = require('@google-cloud/storage');
 
 const app = express();
 const PORT = process.env.PORT || 8080;
@@ -52,6 +57,13 @@ const PLANILHA_ID = process.env.PLANILHA_ID || '1UyH7VLTSU3pIRXH1DOiPSBB1vavy_qy
 const ABA_NOME = process.env.ABA_NOME || 'Página1'; // conferir o nome real da aba na planilha
 const CACHE_FILE_ID = process.env.CACHE_FILE_ID || '1Ks8PvbUfQqg75lHty2qb9bnoIvt7c4pP';
 const DRIVE_API_KEY = process.env.DRIVE_API_KEY || '';
+
+// Bucket do Cloud Storage usado como cache de mídia (ver rota /midia
+// abaixo) — precisa existir e a conta de serviço do Cloud Run precisa
+// ter permissão de escrita nele (roles/storage.objectAdmin). Sem essa
+// variável configurada, /midia responde erro 500 em vez de travar
+// silenciosamente.
+const MIDIA_BUCKET = process.env.MIDIA_BUCKET || '';
 
 // Pasta raiz da biblioteca ("Sonora") que /gerar-cache percorre.
 const PASTA_BIBLIOTECA_ID = process.env.PASTA_BIBLIOTECA_ID || '14D3JK1VVyL3nyDNroK0s2vSLMC0H16I6';
@@ -75,6 +87,7 @@ app.use(express.json());
 let sheetsClientPromise = null;
 let driveClientPromise = null;
 let firestoreClientPromise = null;
+let storageClient = null;
 
 /**
  * Cliente do Firestore, usando a mesma conta de serviço anexada ao
@@ -87,6 +100,17 @@ function getFirestore() {
     firestoreClientPromise = new Firestore();
   }
   return firestoreClientPromise;
+}
+
+/**
+ * Cliente do Cloud Storage, mesma identidade da conta de serviço
+ * anexada ao Cloud Run (Application Default Credentials).
+ */
+function getStorage() {
+  if (!storageClient) {
+    storageClient = new Storage();
+  }
+  return storageClient;
 }
 
 function chavePainelValida(req) {
@@ -200,6 +224,87 @@ app.get('/cache', async (req, res) => {
   } catch (erro) {
     console.error('Erro em /cache:', erro);
     return res.status(500).json({ erro: 'Falha ao carregar o cache da biblioteca.' });
+  }
+});
+
+/**
+ * Proxy de mídia com cache "preguiçoso" no Cloud Storage — resolve o
+ * risco de o Google Drive bloquear por abuso quando muita gente toca a
+ * mesma faixa popular ao mesmo tempo (mecanismo de anti-abuso do Drive,
+ * separado da cota normal, disparado por padrão de acesso e não
+ * documentado — ver sonora_deploy.md nas notas do projeto, 30/08/2026).
+ *
+ * Primeira vez que uma faixa é pedida (qualquer usuário, a partir daí):
+ * baixa do Drive com a conta de serviço já usada pelos outros endpoints
+ * e, ao mesmo tempo, (1) manda os bytes pro cliente que pediu e (2)
+ * guarda uma cópia no bucket do Cloud Storage — sem esperar uma coisa
+ * terminar pra começar a outra. Da segunda vez em diante (qualquer
+ * usuário, qualquer aparelho), é um cache hit: redireciona (302) direto
+ * pra URL pública do objeto no Cloud Storage, que já suporta pedidos de
+ * "Range" nativamente (arrastar a barra de progresso sem baixar a faixa
+ * inteira de novo) sem gastar rede do Cloud Run. Resultado: o Drive passa
+ * a receber no máximo 1 request por faixa, pra sempre — não 1 por play.
+ */
+app.get('/midia/:fileId', async (req, res) => {
+  const { fileId } = req.params;
+  if (!/^[a-zA-Z0-9_-]+$/.test(fileId || '')) {
+    return res.status(400).json({ erro: 'fileId inválido.' });
+  }
+  if (!MIDIA_BUCKET) {
+    console.error('/midia chamado sem MIDIA_BUCKET configurado.');
+    return res.status(500).json({ erro: 'Cache de mídia não configurado.' });
+  }
+
+  const nomeObjeto = `midia/${fileId}.mp3`;
+
+  try {
+    const bucket = getStorage().bucket(MIDIA_BUCKET);
+    const objeto = bucket.file(nomeObjeto);
+    const [existe] = await objeto.exists();
+
+    if (existe) {
+      const urlPublica = `https://storage.googleapis.com/${MIDIA_BUCKET}/${nomeObjeto}`;
+      return res.redirect(302, urlPublica);
+    }
+
+    // Cache miss: busca do Drive e serve + grava em paralelo.
+    const drive = await getDriveClient();
+    const respostaDrive = await drive.files.get(
+      { fileId, alt: 'media' },
+      { responseType: 'stream' }
+    );
+
+    res.set('Content-Type', 'audio/mpeg');
+
+    const gravacao = objeto.createWriteStream({
+      contentType: 'audio/mpeg',
+      resumable: false,
+    });
+    gravacao.on('error', (erroGravacao) => {
+      // Não afeta a resposta pro cliente, que já está sendo servida à
+      // parte — só fica sem cache dessa vez, tenta de novo na próxima.
+      console.error(`Erro ao gravar cache de mídia (${fileId}):`, erroGravacao);
+    });
+
+    respostaDrive.data.on('error', (erroDrive) => {
+      console.error(`Erro lendo ${fileId} do Drive:`, erroDrive);
+      if (!res.headersSent) {
+        res.status(502).json({ erro: 'Falha ao carregar a faixa do Drive.' });
+      } else {
+        res.destroy();
+      }
+    });
+
+    // Mesma leitura do Drive alimentando as duas escritas (cliente +
+    // cache) ao mesmo tempo — .pipe() só registra listeners, não
+    // "consome" o stream sozinho.
+    respostaDrive.data.pipe(res);
+    respostaDrive.data.pipe(gravacao);
+  } catch (erro) {
+    console.error(`Erro em /midia/${fileId}:`, erro);
+    if (!res.headersSent) {
+      res.status(502).json({ erro: 'Falha ao carregar a faixa.' });
+    }
   }
 });
 
@@ -622,7 +727,7 @@ app.get('/painel', (req, res) => {
 
 app.get('/', (_req, res) => {
   res.send(
-    'Sonora backend (Cloud Run) no ar. Endpoints: /validar?id=XXX, /cache e /gerar-cache?chave=XXX'
+    'Sonora backend (Cloud Run) no ar. Endpoints: /validar?id=XXX, /cache, /midia/:fileId e /gerar-cache?chave=XXX'
   );
 });
 

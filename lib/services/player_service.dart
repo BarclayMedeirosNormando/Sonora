@@ -97,7 +97,7 @@ class PlayerService extends ChangeNotifier with WidgetsBindingObserver {
       return AudioSource.uri(Uri.file(local), tag: tag);
     }
     return AudioSource.uri(
-      Uri.parse(track.streamUrl(AppConstants.driveApiKey)),
+      Uri.parse(track.streamUrl(AppConstants.cloudRunBaseUrl)),
       tag: tag,
     );
   }
