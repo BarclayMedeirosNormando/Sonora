@@ -28,6 +28,7 @@ class Track {
         'id': id,
         'title': title,
         'sizeBytes': sizeBytes,
+        'paiId': paiId,
       };
 
   factory Track.fromLocalJson(Map<String, dynamic> json) {
@@ -35,6 +36,10 @@ class Track {
       id: json['id'] as String,
       title: json['title'] as String,
       sizeBytes: (json['sizeBytes'] as num?)?.toInt() ?? 0,
+      // Campo novo (30/08/2026) — estados salvos ANTES dessa mudança não
+      // têm 'paiId' no JSON; o '?' + fallback null cobre esse caso sem
+      // quebrar a restauração de filas salvas antigas.
+      paiId: json['paiId'] as String?,
     );
   }
 

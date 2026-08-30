@@ -12,6 +12,7 @@ import '../models/track.dart';
 import 'api_service.dart';
 import 'device_id_service.dart';
 import 'download_service.dart';
+import 'library_cache_service.dart';
 
 /// Estado e controle da reprodução: fila de faixas, play/pause, avançar/
 /// voltar, reordenar fila, "tocar a seguir", sleep timer e restaurar de
@@ -76,11 +77,20 @@ class PlayerService extends ChangeNotifier with WidgetsBindingObserver {
   /// Drive de sempre.
   AudioSource _fonteDe(Track track) {
     // MediaItem alimenta a notificação de mídia do just_audio_background
-    // (título exibido, ícone de play/pause no lockscreen etc).
+    // (título exibido, artista/álbum, capa e ícone de play/pause no
+    // lockscreen etc) — sem artUri a notificação fica com ícone genérico
+    // em vez da capa real do álbum, o que faz ela parecer "mais pobre"
+    // do que apps tipo YouTube Music/Spotify.
+    final album = track.paiId != null
+        ? LibraryCacheService.albumPorId(track.paiId!)
+        : null;
+    final capaUrl = album?.capaUrl(AppConstants.driveApiKey);
     final tag = MediaItem(
       id: track.id,
       title: track.displayTitle,
       album: 'Sonora',
+      artist: album?.displayName,
+      artUri: capaUrl != null ? Uri.parse(capaUrl) : null,
     );
     final local = _downloadService?.caminhoLocal(track.id);
     if (local != null) {
