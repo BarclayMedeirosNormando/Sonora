@@ -715,6 +715,37 @@ app.get('/api/usuario-plays', async (req, res) => {
 });
 
 /**
+ * Apaga TODOS os documentos da coleção "plays" — zera o histórico de
+ * reprodução usado pelo painel (Faixas mais tocadas, Plays por dia,
+ * Álbuns mais tocados e o histórico por usuário). Ação manual, disparada
+ * uma vez visitando a URL com a chave (mesmo padrão do /gerar-cache) —
+ * não é usada pelo app nem chamada automaticamente por nada.
+ * IRREVERSÍVEL: não existe backup dos plays apagados.
+ */
+app.get('/api/zerar-plays', async (req, res) => {
+  if (!chavePainelValida(req)) return res.status(403).json({ erro: 'Chave ausente ou incorreta.' });
+  try {
+    const db = getFirestore();
+    let totalApagado = 0;
+    // Apaga em lotes de até 500 (limite de um batch do Firestore),
+    // repetindo até a coleção esvaziar.
+    while (true) {
+      const snap = await db.collection('plays').limit(500).get();
+      if (snap.empty) break;
+      const batch = db.batch();
+      snap.forEach((doc) => batch.delete(doc.ref));
+      await batch.commit();
+      totalApagado += snap.size;
+    }
+    console.log(`/api/zerar-plays: ${totalApagado} plays apagados.`);
+    return res.json({ ok: true, totalApagado });
+  } catch (erro) {
+    console.error('Erro em /api/zerar-plays:', erro);
+    return res.status(500).json({ erro: 'Falha ao zerar os plays.' });
+  }
+});
+
+/**
  * Libera um App_ID (muda Status pra "Liberado" na planilha) — ação do
  * botão "Liberar" no painel.
  */
