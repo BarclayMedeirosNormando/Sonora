@@ -131,11 +131,14 @@ class PlayerService extends ChangeNotifier with WidgetsBindingObserver {
   void _registrarPlayDaFaixaAtual() {
     final faixa = faixaAtual;
     if (faixa == null) return;
+    final album =
+        faixa.paiId != null ? LibraryCacheService.albumPorId(faixa.paiId!) : null;
     DeviceIdService.getOrCreateDeviceId().then((appId) {
       ApiService.registrarPlay(
         appId: appId,
         faixaId: faixa.id,
         faixaNome: faixa.displayTitle,
+        albumNome: album?.displayName ?? '',
       );
     });
   }

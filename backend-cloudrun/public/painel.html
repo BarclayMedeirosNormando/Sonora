@@ -127,6 +127,22 @@
   .foot-note { font-size: 12px; color: var(--text-muted); margin-top: 6px; }
 
   @media (max-width: 760px) { .kpi-row { grid-template-columns: repeat(2, 1fr); } .grid-2, .grid-2b { grid-template-columns: 1fr; } }
+
+  .pill.error { background: rgba(208,59,59,0.12); color: var(--status-critical); }
+  .alert-list { display:flex; flex-direction:column; gap:10px; }
+  .alert-item { display:flex; flex-direction:column; gap:2px; padding:10px 12px; border-radius:8px; background: rgba(208,59,59,0.08); border:1px solid rgba(208,59,59,0.22); }
+  .alert-item .origem { font-size:12.5px; font-weight:650; color: var(--status-critical); }
+  .alert-item .detalhe { font-size:12px; color: var(--text-secondary); word-break:break-word; }
+  .alert-item .quando { font-size:11px; color: var(--text-muted); }
+  .alert-ok { display:flex; align-items:center; gap:8px; padding:14px 4px; color: var(--status-good); font-size:13px; font-weight:550; }
+  .cache-midia-row { display:flex; flex-direction:column; gap:12px; margin-top:4px; }
+  .user-plays-wrap { width:100%; margin-top:4px; }
+  .user-plays-list { display:flex; flex-direction:column; gap:0; margin-top:6px; }
+  .user-plays-list .up-item { display:flex; justify-content:space-between; gap:10px; font-size:12.5px; padding:6px 0; border-bottom:1px solid var(--grid); }
+  .user-plays-list .up-item:last-child { border-bottom:none; }
+  .user-plays-list .up-track { font-weight:550; }
+  .user-plays-list .up-album { color: var(--text-muted); font-size:11.5px; }
+  .user-plays-list .up-when { color: var(--text-muted); font-size:11px; white-space:nowrap; }
 </style>
 </head>
 <body>
@@ -151,6 +167,22 @@
   </section>
 
   <section>
+    <h2>Sistema</h2>
+    <div class="grid-2b">
+      <div class="card">
+        <h3>Cache de mídia</h3>
+        <p class="sub">Arquivos guardados no proxy (Cloud Storage)</p>
+        <div class="cache-midia-row" id="cache-midia-info"></div>
+      </div>
+      <div class="card">
+        <h3>Alertas recentes</h3>
+        <p class="sub">Erros do backend nos últimos dias</p>
+        <div id="alertas-lista"></div>
+      </div>
+    </div>
+  </section>
+
+  <section>
     <h2>Biblioteca</h2>
     <div class="grid-2">
       <div class="card">
@@ -163,6 +195,12 @@
         <p class="sub">Resultado do <code>/gerar-cache</code> mais recente</p>
         <div id="ultima-geracao" style="display:flex; flex-direction:column; gap:12px; margin-top:4px;"></div>
       </div>
+    </div>
+    <div class="card" style="margin-top:14px;">
+      <h3>Últimas gerações de cache</h3>
+      <p class="sub">Histórico de execuções do <code>/gerar-cache</code>, incluindo falhas</p>
+      <table><thead><tr><th>Quando</th><th>Duração</th><th>Resultado</th></tr></thead><tbody id="geracoes-tbody"></tbody></table>
+      <p class="foot-note" id="geracoes-vazio" style="display:none;">Ainda não há gerações registradas.</p>
     </div>
   </section>
 
@@ -209,6 +247,11 @@
         <p class="sub">Últimos 14 dias</p>
         <div class="chart-wrap" id="chart-plays"></div>
       </div>
+    </div>
+    <div class="card" style="margin-top:14px;">
+      <h3>Álbuns mais tocados</h3>
+      <p class="sub">Últimos 14 dias</p>
+      <div class="chart-wrap" id="chart-top-albums"></div>
     </div>
   </section>
 </div>
@@ -356,10 +399,11 @@
   async function carregar() {
     clearBanner();
     try {
-      const [resumo, usuariosResp, engajamento] = await Promise.all([
+      const [resumo, usuariosResp, engajamento, alertasResp] = await Promise.all([
         apiGet('/api/resumo'),
         apiGet('/api/usuarios'),
         apiGet('/api/engajamento'),
+        apiGet('/api/alertas'),
       ]);
 
       document.getElementById('subtitle').textContent =
@@ -388,8 +432,56 @@
       }
 
       // Crescimento
-      const growth = (resumo.historico || []).map(h => ({ label: new Date(h.geradoEm).toLocaleDateString('pt-BR', {day:'2-digit', month:'2-digit'}), v: h.totalFaixas }));
+      const growth = (resumo.historico || [])
+        .filter(h => h.totalFaixas != null)
+        .map(h => ({ label: new Date(h.geradoEm).toLocaleDateString('pt-BR', {day:'2-digit', month:'2-digit'}), v: h.totalFaixas }));
       lineChart(document.getElementById('chart-growth'), growth, { color: color('--series-1'), wash: color('--series-1-wash'), mensagemUmPonto: v => `Só uma geração registrada até agora (${fmt(v)}). O gráfico aparece a partir da segunda.` });
+
+      // Cache de mídia
+      const cacheEl = document.getElementById('cache-midia-info');
+      if (resumo.cacheMidia) {
+        const gb = resumo.cacheMidia.totalBytes / (1024*1024*1024);
+        cacheEl.innerHTML = `
+          <div><div class="label" style="font-size:12px;color:var(--text-muted);">Arquivos em cache</div><div style="font-size:14px;font-weight:600;">${fmt(resumo.cacheMidia.totalArquivos)}</div></div>
+          <div><div class="label" style="font-size:12px;color:var(--text-muted);">Espaço usado</div><div style="font-size:14px;font-weight:600;">${gb.toFixed(2)} GB</div></div>
+        `;
+      } else {
+        cacheEl.innerHTML = '<div class="empty-note">Sem dados do proxy de mídia (bucket não configurado ou vazio).</div>';
+      }
+
+      // Alertas
+      const alertas = alertasResp.alertas || [];
+      const alertasEl = document.getElementById('alertas-lista');
+      if (!alertas.length) {
+        alertasEl.innerHTML = '<div class="alert-ok">✓ Tudo certo — nenhum alerta recente.</div>';
+      } else {
+        alertasEl.innerHTML = '<div class="alert-list">' + alertas.map(a => `
+          <div class="alert-item">
+            <div class="origem">${a.origem || '—'}</div>
+            <div class="detalhe">${a.detalhe || ''}</div>
+            <div class="quando">${a.timestamp ? new Date(a.timestamp).toLocaleString('pt-BR') : ''}</div>
+          </div>
+        `).join('') + '</div>';
+      }
+
+      // Últimas gerações
+      const geracoesTbody = document.getElementById('geracoes-tbody');
+      geracoesTbody.innerHTML = '';
+      const geracoes = (resumo.historico || []).slice().reverse();
+      document.getElementById('geracoes-vazio').style.display = geracoes.length ? 'none' : 'block';
+      geracoes.forEach(h => {
+        const tr = document.createElement('tr');
+        const ok = h.totalFaixas != null && !h.erro;
+        const resultadoHtml = ok
+          ? `<span class="pill ok"><span class="pill-dot"></span>${fmt(h.totalAlbuns)} álbuns · ${fmt(h.totalFaixas)} faixas</span>`
+          : `<span class="pill error"><span class="pill-dot"></span>Falhou${h.erro ? ': ' + h.erro : ''}</span>`;
+        tr.innerHTML = `
+          <td>${h.geradoEm ? new Date(h.geradoEm).toLocaleString('pt-BR') : '—'}</td>
+          <td>${h.duracaoMs != null ? (h.duracaoMs/1000).toFixed(2) + 's' : '—'}</td>
+          <td>${resultadoHtml}</td>
+        `;
+        geracoesTbody.appendChild(tr);
+      });
 
       // Dispositivos
       compareBar(document.getElementById('chart-devices'), { v: resumo.dispositivos.liberados }, { v: resumo.dispositivos.bloqueados });
@@ -452,12 +544,43 @@
               <div class="detail-field"><div class="label">Liberado em</div><div class="value">${u.dataLiberacao || '—'}</div></div>
               <div class="detail-field"><div class="label">Tempo de casa</div><div class="value">${dias === null ? '—' : dias + ' dias'}</div></div>
               ${notaEngajamento}
+              <div class="user-plays-wrap">
+                <div class="label" style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.03em;">Últimos plays</div>
+                <div class="user-plays-list" data-loaded="0">
+                  <div class="detail-note">Clique pra carregar.</div>
+                </div>
+              </div>
             </div>
           </td>
         `;
-        row.addEventListener('click', () => {
+        const playsListEl = detail.querySelector('.user-plays-list');
+        row.addEventListener('click', async () => {
           const isOpen = row.classList.toggle('open');
           detail.classList.toggle('closed', !isOpen);
+          if (isOpen && playsListEl.dataset.loaded === '0') {
+            playsListEl.dataset.loaded = '1';
+            playsListEl.innerHTML = '<div class="detail-note">Carregando...</div>';
+            try {
+              const resp = await apiGet('/api/usuario-plays?appId=' + encodeURIComponent(u.appId));
+              const plays = resp.plays || [];
+              if (!plays.length) {
+                playsListEl.innerHTML = '<div class="detail-note">Sem plays registrados ainda.</div>';
+              } else {
+                playsListEl.innerHTML = plays.map(p => `
+                  <div class="up-item">
+                    <span>
+                      <div class="up-track">${p.faixaNome || '(sem nome)'}</div>
+                      ${p.albumNome ? `<div class="up-album">${p.albumNome}</div>` : ''}
+                    </span>
+                    <span class="up-when">${new Date(p.data).toLocaleString('pt-BR')}</span>
+                  </div>
+                `).join('');
+              }
+            } catch (err) {
+              playsListEl.dataset.loaded = '0';
+              playsListEl.innerHTML = '<div class="detail-note">Falha ao carregar plays: ' + err.message + '</div>';
+            }
+          }
         });
         usersTbody.appendChild(row);
         usersTbody.appendChild(detail);
@@ -467,6 +590,8 @@
       document.getElementById('engajamento-tag').style.display = engajamento.totalPlays14d ? 'none' : 'inline-block';
       const topFaixas = (engajamento.topFaixas || []).map(f => ({ label: f.faixaNome, v: f.count }));
       hBarChart(document.getElementById('chart-top-tracks'), topFaixas, { color: color('--series-2') });
+      const topAlbuns = (engajamento.topAlbuns || []).map(a => ({ label: a.albumNome, v: a.count }));
+      hBarChart(document.getElementById('chart-top-albums'), topAlbuns, { color: color('--series-1') });
       const playsPorDia = (engajamento.playsPorDia || []).map(p => ({ label: fmtDiaCurto(p.dia), v: p.total }));
       lineChart(document.getElementById('chart-plays'), playsPorDia, { color: color('--series-2'), wash: color('--series-2-wash'), mensagemUmPonto: v => `Só um dia com plays registrado até agora (${fmt(v)}). O gráfico aparece a partir do segundo dia.` });
 

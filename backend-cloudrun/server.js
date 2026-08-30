@@ -29,13 +29,15 @@
 //   28/08/2026 com ~2.900 faixas, biblioteca ainda crescendo aos poucos).
 //   Acionado manualmente pelo Barclay (não é chamado pelo app).
 //
-// PAINEL ADMINISTRATIVO (29/08/2026):
-//   POST /registrar-play           -> app registra cada play no Firestore
-//   GET  /api/resumo?chave=XXX     -> biblioteca + contagem de dispositivos
-//   GET  /api/usuarios?chave=XXX   -> lista de dispositivos/usuários
-//   POST /api/liberar?chave=XXX    -> libera um App_ID (Status -> Liberado)
-//   GET  /api/engajamento?chave=XXX-> agrega plays do Firestore (14 dias)
-//   GET  /painel?chave=XXX         -> a página do painel em si
+// PAINEL ADMINISTRATIVO (29/08/2026, ampliado 30/08/2026):
+//   POST /registrar-play              -> app registra cada play no Firestore
+//   GET  /api/resumo?chave=XXX        -> biblioteca + dispositivos + cache de mídia
+//   GET  /api/usuarios?chave=XXX      -> lista de dispositivos/usuários
+//   GET  /api/usuario-plays?chave=XXX&appId=X -> últimas faixas de um usuário
+//   POST /api/liberar?chave=XXX       -> libera um App_ID (Status -> Liberado)
+//   GET  /api/engajamento?chave=XXX   -> agrega plays do Firestore (14 dias) + top álbuns
+//   GET  /api/alertas?chave=XXX       -> últimos erros registrados (Drive, cache, etc.)
+//   GET  /painel?chave=XXX            -> a página do painel em si
 //   Protegido por PAINEL_CHAVE (mesma ideia do GERAR_CACHE_CHAVE, senha
 //   simples via query param — não é auth de verdade). /registrar-play não
 //   tem trava, é chamado o tempo todo pelo app.
@@ -115,6 +117,29 @@ function getStorage() {
 
 function chavePainelValida(req) {
   return !PAINEL_CHAVE || req.query.chave === PAINEL_CHAVE;
+}
+
+/**
+ * Registra um alerta de erro no Firestore pro painel administrativo
+ * mostrar sem precisar ir no Cloud Logging manualmente (30/08/2026).
+ * Fire-and-forget: nunca lança erro, só loga se falhar em gravar — não
+ * pode derrubar a rota que chamou.
+ */
+function registrarAlerta(origem, detalhe) {
+  try {
+    getFirestore()
+      .collection('alertas')
+      .add({
+        origem: String(origem),
+        detalhe: String((detalhe && detalhe.message) || detalhe || ''),
+        timestamp: Firestore.FieldValue.serverTimestamp(),
+      })
+      .catch((erroFirestore) => {
+        console.error('Aviso: falha ao registrar alerta no Firestore (não bloqueia):', erroFirestore);
+      });
+  } catch (erroSincrono) {
+    console.error('Aviso: falha ao registrar alerta (não bloqueia):', erroSincrono);
+  }
 }
 
 /**
@@ -223,6 +248,7 @@ app.get('/cache', async (req, res) => {
     return res.send(texto);
   } catch (erro) {
     console.error('Erro em /cache:', erro);
+    registrarAlerta('/cache', erro);
     return res.status(500).json({ erro: 'Falha ao carregar o cache da biblioteca.' });
   }
 });
@@ -316,6 +342,7 @@ app.get('/midia/:fileId', async (req, res) => {
       });
   } catch (erro) {
     console.error(`Erro em /midia/${fileId}:`, erro);
+    registrarAlerta('/midia', `${fileId}: ${(erro && erro.message) || erro}`);
     if (!res.headersSent) {
       res.status(502).json({ erro: 'Falha ao carregar a faixa.' });
     }
@@ -470,6 +497,21 @@ app.get('/gerar-cache', async (req, res) => {
     return res.json({ ok: true, ...resumoGeracao });
   } catch (erro) {
     console.error('Erro em /gerar-cache:', erro);
+    registrarAlerta('/gerar-cache', erro);
+
+    // Grava a falha no histórico também (antes só sucesso ficava
+    // registrado) — pra tabela de últimas gerações do painel mostrar
+    // quando uma rodada quebrou, não só as que deram certo (30/08/2026).
+    try {
+      await getFirestore().collection('historicoBiblioteca').add({
+        geradoEm: new Date().toISOString(),
+        erro: String((erro && erro.message) || erro),
+        duracaoMs: Date.now() - inicio,
+      });
+    } catch (erroFirestore) {
+      console.error('Aviso: falha ao salvar falha no Firestore (não bloqueia):', erroFirestore);
+    }
+
     return res.status(500).json({
       erro: 'Falha ao gerar o cache.',
       detalhe: String((erro && erro.message) || erro),
@@ -508,27 +550,44 @@ app.post('/registrar-play', async (req, res) => {
  * Resumo pro topo do painel — junta o último resultado de /gerar-cache
  * (guardado no Firestore) com a contagem de dispositivos da planilha.
  */
+/**
+ * Estatísticas do cache de mídia (bucket do Cloud Storage usado pelo
+ * proxy /midia) — quantos arquivos já estão em cache e quanto espaço
+ * ocupam, pro painel mostrar sem precisar abrir o Console (30/08/2026).
+ * Retorna null se MIDIA_BUCKET não estiver configurado — não deve
+ * quebrar o resto do /api/resumo se isso falhar.
+ */
+async function estatisticasCacheMidia() {
+  if (!MIDIA_BUCKET) return null;
+  try {
+    const [arquivos] = await getStorage().bucket(MIDIA_BUCKET).getFiles({ prefix: 'midia/' });
+    const totalBytes = arquivos.reduce((soma, a) => soma + Number(a.metadata.size || 0), 0);
+    return { totalArquivos: arquivos.length, totalBytes };
+  } catch (erro) {
+    console.error('Aviso: falha ao ler estatísticas do cache de mídia (não bloqueia):', erro);
+    return null;
+  }
+}
+
 app.get('/api/resumo', async (req, res) => {
   if (!chavePainelValida(req)) return res.status(403).json({ erro: 'Chave ausente ou incorreta.' });
   try {
     const db = getFirestore();
-    const doc = await db.collection('estado').doc('biblioteca').get();
-    const biblioteca = doc.exists ? doc.data() : null;
 
-    const historicoSnap = await db
-      .collection('historicoBiblioteca')
-      .orderBy('geradoEm', 'desc')
-      .limit(30)
-      .get();
+    const [doc, historicoSnap, leitura, cacheMidia] = await Promise.all([
+      db.collection('estado').doc('biblioteca').get(),
+      db.collection('historicoBiblioteca').orderBy('geradoEm', 'desc').limit(30).get(),
+      getSheetsClient().then((sheets) =>
+        sheets.spreadsheets.values.get({ spreadsheetId: PLANILHA_ID, range: `${ABA_NOME}!A:D` })
+      ),
+      estatisticasCacheMidia(),
+    ]);
+
+    const biblioteca = doc.exists ? doc.data() : null;
     const historico = historicoSnap.docs
       .map((d) => d.data())
       .reverse(); // mais antigo primeiro, pro gráfico
 
-    const sheets = await getSheetsClient();
-    const leitura = await sheets.spreadsheets.values.get({
-      spreadsheetId: PLANILHA_ID,
-      range: `${ABA_NOME}!A:D`,
-    });
     const linhas = (leitura.data.values || []).slice(1);
     const liberados = linhas.filter(
       (l) => String(l[1] || '').trim().toLowerCase() === 'liberado'
@@ -537,6 +596,7 @@ app.get('/api/resumo', async (req, res) => {
     return res.json({
       biblioteca,
       historico,
+      cacheMidia,
       dispositivos: {
         liberados,
         bloqueados: linhas.length - liberados,
@@ -546,6 +606,35 @@ app.get('/api/resumo', async (req, res) => {
   } catch (erro) {
     console.error('Erro em /api/resumo:', erro);
     return res.status(500).json({ erro: 'Falha ao carregar o resumo.' });
+  }
+});
+
+/**
+ * Últimos alertas de erro registrados (ver registrarAlerta acima) — pro
+ * painel avisar se algo deu errado recentemente (Drive bloqueando,
+ * /gerar-cache falhando, etc.) sem precisar checar o Cloud Logging
+ * manualmente (30/08/2026).
+ */
+app.get('/api/alertas', async (req, res) => {
+  if (!chavePainelValida(req)) return res.status(403).json({ erro: 'Chave ausente ou incorreta.' });
+  try {
+    const snap = await getFirestore()
+      .collection('alertas')
+      .orderBy('timestamp', 'desc')
+      .limit(10)
+      .get();
+    const alertas = snap.docs.map((d) => {
+      const dados = d.data();
+      return {
+        origem: dados.origem,
+        detalhe: dados.detalhe,
+        timestamp: dados.timestamp && dados.timestamp.toDate ? dados.timestamp.toDate().toISOString() : null,
+      };
+    });
+    return res.json({ alertas });
+  } catch (erro) {
+    console.error('Erro em /api/alertas:', erro);
+    return res.status(500).json({ erro: 'Falha ao carregar alertas.' });
   }
 });
 
@@ -588,6 +677,40 @@ app.get('/api/usuarios', async (req, res) => {
   } catch (erro) {
     console.error('Erro em /api/usuarios:', erro);
     return res.status(500).json({ erro: 'Falha ao carregar usuários.' });
+  }
+});
+
+/**
+ * Últimas faixas que um App_ID específico tocou — pro painel mostrar
+ * "o que esse cliente andou ouvindo" ao expandir a linha dele
+ * (30/08/2026). Sem filtro de data no Firestore (só igualdade de
+ * appId, sem orderBy) pra não precisar de índice composto — ordena e
+ * corta em memória, tranquilo no volume de uso atual.
+ */
+app.get('/api/usuario-plays', async (req, res) => {
+  if (!chavePainelValida(req)) return res.status(403).json({ erro: 'Chave ausente ou incorreta.' });
+  const appId = req.query.appId;
+  if (!appId) return res.status(400).json({ erro: 'appId é obrigatório.' });
+  try {
+    const snap = await getFirestore()
+      .collection('plays')
+      .where('appId', '==', String(appId))
+      .get();
+    const plays = [];
+    snap.forEach((doc) => {
+      const d = doc.data();
+      if (!d.timestamp || !d.timestamp.toDate) return;
+      plays.push({
+        faixaNome: d.faixaNome || d.faixaId,
+        albumNome: d.albumNome || '',
+        data: d.timestamp.toDate().toISOString(),
+      });
+    });
+    plays.sort((a, b) => b.data.localeCompare(a.data));
+    return res.json({ plays: plays.slice(0, 50) });
+  } catch (erro) {
+    console.error('Erro em /api/usuario-plays:', erro);
+    return res.status(500).json({ erro: 'Falha ao carregar as faixas do usuário.' });
   }
 });
 
@@ -649,6 +772,7 @@ async function buscarPlaysRecentes(dias) {
       appId: d.appId,
       faixaId: d.faixaId,
       faixaNome: d.faixaNome || d.faixaId,
+      albumNome: d.albumNome || '',
       data: d.timestamp.toDate(),
     });
   });
@@ -695,6 +819,7 @@ app.get('/api/engajamento', async (req, res) => {
 
     const porDia = {};
     const porFaixa = {};
+    const porAlbum = {};
     const usuariosHoje = new Set();
     const hojeStr = new Date().toISOString().slice(0, 10);
 
@@ -705,6 +830,11 @@ app.get('/api/engajamento', async (req, res) => {
 
       porFaixa[p.faixaId] = porFaixa[p.faixaId] || { faixaNome: p.faixaNome, count: 0 };
       porFaixa[p.faixaId].count += 1;
+
+      if (p.albumNome) {
+        porAlbum[p.albumNome] = porAlbum[p.albumNome] || { albumNome: p.albumNome, count: 0 };
+        porAlbum[p.albumNome].count += 1;
+      }
     });
 
     const playsPorDia = Object.entries(porDia)
@@ -715,9 +845,14 @@ app.get('/api/engajamento', async (req, res) => {
       .sort((a, b) => b.count - a.count)
       .slice(0, 8);
 
+    const topAlbuns = Object.values(porAlbum)
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 8);
+
     return res.json({
       playsPorDia,
       topFaixas,
+      topAlbuns,
       usuariosAtivosHoje: usuariosHoje.size,
       totalPlays14d: plays.length,
     });
