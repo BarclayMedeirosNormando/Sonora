@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  O build release desse projeto roda o shrinker de recursos do R8
+  (confirmado em 30/08/2026 nos intermediates do Gradle:
+  build/app/intermediates/shrunk_resources_*, mesmo sem
+  isMinifyEnabled/isShrinkResources aparecerem em build.gradle.kts -
+  é um default novo da Flutter Gradle Plugin/AGP recente).
+
+  Os ícones audio_service_stop/_fast_forward/_fast_rewind (criados em
+  android/app/src/main/res/drawable/ pra resolver o crash
+  "IllegalArgumentException: You must specify an icon resource id to
+  build a CustomAction") só são referenciados em tempo de execução via
+  Resources.getIdentifier() (string), dentro do plugin nativo
+  audio_service - isso é invisível pra análise estática do shrinker,
+  que remove o recurso do APK final por achar que "não é usado em
+  lugar nenhum". Confirmado empiricamente: os 3 ícones apareciam em
+  build/app/intermediates/merged_res mas sumiam do resources.arsc
+  final. tools:keep força o shrinker a manter esses recursos mesmo sem
+  encontrar uma referência estática.
+-->
+<resources xmlns:tools="http://schemas.android.com/tools"
+    tools:keep="@drawable/audio_service_stop,@drawable/audio_service_fast_forward,@drawable/audio_service_fast_rewind" />
