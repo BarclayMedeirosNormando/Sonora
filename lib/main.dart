@@ -33,7 +33,14 @@ void main() async {
   // de player + wake lock) — sem isso, o playback é suspenso pelo sistema
   // quando a tela bloqueia/o app vai pra segundo plano.
   await JustAudioBackground.init(
-    androidNotificationChannelId: 'com.barclaymedeiros.sonora.audio',
+    // ID novo (v2, 30/08/2026) de propósito — o canal antigo
+    // ('com.barclaymedeiros.sonora.audio', existente desde a v2.1.0, antes
+    // da gente pedir a permissão de notificação direito) pode ter ficado
+    // silenciado por baixo dos panos (MIUI costuma bloquear canal por
+    // canal, separado do interruptor geral do app) sem dar pra saber de
+    // fora — trocar o ID força o Android a criar um canal novo do zero,
+    // com o padrão (permitido), em vez de herdar esse possível bloqueio.
+    androidNotificationChannelId: 'com.barclaymedeiros.sonora.audio.v2',
     androidNotificationChannelName: 'Reprodução Sonora',
     androidNotificationOngoing: true,
   );
