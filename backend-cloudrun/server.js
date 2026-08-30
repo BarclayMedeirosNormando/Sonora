@@ -235,15 +235,25 @@ app.get('/cache', async (req, res) => {
  * documentado — ver sonora_deploy.md nas notas do projeto, 30/08/2026).
  *
  * Primeira vez que uma faixa é pedida (qualquer usuário, a partir daí):
- * baixa do Drive com a conta de serviço já usada pelos outros endpoints
- * e, ao mesmo tempo, (1) manda os bytes pro cliente que pediu e (2)
- * guarda uma cópia no bucket do Cloud Storage — sem esperar uma coisa
- * terminar pra começar a outra. Da segunda vez em diante (qualquer
- * usuário, qualquer aparelho), é um cache hit: redireciona (302) direto
- * pra URL pública do objeto no Cloud Storage, que já suporta pedidos de
- * "Range" nativamente (arrastar a barra de progresso sem baixar a faixa
- * inteira de novo) sem gastar rede do Cloud Run. Resultado: o Drive passa
- * a receber no máximo 1 request por faixa, pra sempre — não 1 por play.
+ * baixa do Drive INTEIRA pra memória (faixas de MP3 são pequenas, poucos
+ * MB — cabe tranquilo), manda pro cliente, e SÓ DEPOIS de responder
+ * grava uma cópia no bucket em segundo plano (sem o cliente esperar por
+ * isso). Da segunda vez em diante (qualquer usuário, qualquer aparelho),
+ * é um cache hit: redireciona (302) direto pra URL pública do objeto no
+ * Cloud Storage, que já suporta "Range" nativamente (arrastar a barra de
+ * progresso sem baixar a faixa inteira de novo) sem gastar rede do Cloud
+ * Run. Resultado: o Drive passa a receber no máximo 1 request por faixa,
+ * pra sempre — não 1 por play.
+ *
+ * NOTA (30/08/2026): a primeira versão desse endpoint tentava mandar pro
+ * cliente e gravar no bucket ao mesmo tempo, "correndo" as duas coisas a
+ * partir do mesmo stream de leitura do Drive (stream.pipe() pros dois
+ * lados). Na prática isso travava a entrega pro cliente esperando a
+ * gravação no Storage também progredir (backpressure de um lado
+ * contaminando o outro) — confirmado pelo Barclay: abrir a URL direto
+ * ficava travado em 0:00, mas abrir de novo (depois que a gravação
+ * enfim tinha terminado por trás) funcionava normal. Baixar tudo pra um
+ * Buffer primeiro elimina essa dependência entre as duas coisas.
  */
 app.get('/midia/:fileId', async (req, res) => {
   const { fileId } = req.params;
@@ -267,39 +277,43 @@ app.get('/midia/:fileId', async (req, res) => {
       return res.redirect(302, urlPublica);
     }
 
-    // Cache miss: busca do Drive e serve + grava em paralelo.
+    // Cache miss: baixa a faixa inteira do Drive pra memória.
     const drive = await getDriveClient();
     const respostaDrive = await drive.files.get(
       { fileId, alt: 'media' },
-      { responseType: 'stream' }
+      { responseType: 'arraybuffer' }
     );
+    const bytes = Buffer.from(respostaDrive.data);
 
-    res.set('Content-Type', 'audio/mpeg');
+    // Suporte básico a "Range" mesmo nesse primeiro play (raro — só
+    // acontece uma vez por faixa, pra sempre — mas evita qualquer
+    // estranheza ao arrastar a barra de progresso logo na primeira vez).
+    const range = req.headers.range;
+    const combinacao = range && /^bytes=(\d*)-(\d*)$/.exec(range);
+    if (combinacao && (combinacao[1] || combinacao[2])) {
+      const inicio = combinacao[1] ? parseInt(combinacao[1], 10) : 0;
+      const fim = combinacao[2] ? parseInt(combinacao[2], 10) : bytes.length - 1;
+      res.status(206);
+      res.set('Content-Range', `bytes ${inicio}-${fim}/${bytes.length}`);
+      res.set('Content-Length', String(fim - inicio + 1));
+      res.set('Accept-Ranges', 'bytes');
+      res.set('Content-Type', 'audio/mpeg');
+      res.send(bytes.subarray(inicio, fim + 1));
+    } else {
+      res.set('Content-Length', String(bytes.length));
+      res.set('Accept-Ranges', 'bytes');
+      res.set('Content-Type', 'audio/mpeg');
+      res.send(bytes);
+    }
 
-    const gravacao = objeto.createWriteStream({
-      contentType: 'audio/mpeg',
-      resumable: false,
-    });
-    gravacao.on('error', (erroGravacao) => {
-      // Não afeta a resposta pro cliente, que já está sendo servida à
-      // parte — só fica sem cache dessa vez, tenta de novo na próxima.
-      console.error(`Erro ao gravar cache de mídia (${fileId}):`, erroGravacao);
-    });
-
-    respostaDrive.data.on('error', (erroDrive) => {
-      console.error(`Erro lendo ${fileId} do Drive:`, erroDrive);
-      if (!res.headersSent) {
-        res.status(502).json({ erro: 'Falha ao carregar a faixa do Drive.' });
-      } else {
-        res.destroy();
-      }
-    });
-
-    // Mesma leitura do Drive alimentando as duas escritas (cliente +
-    // cache) ao mesmo tempo — .pipe() só registra listeners, não
-    // "consome" o stream sozinho.
-    respostaDrive.data.pipe(res);
-    respostaDrive.data.pipe(gravacao);
+    // Grava no bucket DEPOIS de já ter respondido — o cliente não espera
+    // por isso, só fica sem cache dessa vez se der erro (tenta de novo
+    // na próxima faixa pedida).
+    objeto
+      .save(bytes, { contentType: 'audio/mpeg', resumable: false })
+      .catch((erroGravacao) => {
+        console.error(`Erro ao gravar cache de mídia (${fileId}):`, erroGravacao);
+      });
   } catch (erro) {
     console.error(`Erro em /midia/${fileId}:`, erro);
     if (!res.headersSent) {
