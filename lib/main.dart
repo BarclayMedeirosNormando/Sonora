@@ -43,6 +43,19 @@ void main() async {
     androidNotificationChannelId: 'com.barclaymedeiros.sonora.audio.v2',
     androidNotificationChannelName: 'Reprodução Sonora',
     androidNotificationOngoing: true,
+    // Zero desliga os botões de avançar/voltar 10s da notificação (o app
+    // não tem essa função na UI). Achamos, via log real do aparelho, que
+    // o plugin trava ao montar a notificação com
+    // "IllegalArgumentException: You must specify an icon resource id to
+    // build a CustomAction" — no Android 13+ esses dois botões (e o de
+    // stop) viram "custom actions" que exigem um ícone próprio, e os
+    // ícones padrão do plugin (audio_service_fast_forward/_fast_rewind)
+    // não estavam resolvendo nesse build. Isso quebrava a notificação
+    // inteira (por isso não aparecia nada, nem em primeiro plano) e o
+    // app ficava sem proteção de foreground service de verdade, sendo
+    // asfixiado pelo MIUI após alguns minutos em segundo plano.
+    fastForwardInterval: Duration.zero,
+    rewindInterval: Duration.zero,
   );
 
   // Criado antes do MultiProvider pra poder ser injetado tanto no próprio
