@@ -30,6 +30,13 @@ class PlayerService extends ChangeNotifier with WidgetsBindingObserver {
   Timer? _sleepTimer;
   DateTime? _sleepFimEm;
 
+  // Debounce do registro de play (telemetria pro painel): só conta
+  // como play de verdade depois de alguns segundos tocando sem pular
+  // pra outra faixa — evita contar "passei reto" (próxima/anterior
+  // rápido, só espiando a fila) como se fosse ter ouvido a música.
+  static const _tempoMinimoParaContarPlay = Duration(seconds: 8);
+  Timer? _registroPlayTimer;
+
   PlayerService({DownloadService? downloadService})
       : _downloadService = downloadService {
     WidgetsBinding.instance.addObserver(this);
@@ -44,7 +51,7 @@ class PlayerService extends ChangeNotifier with WidgetsBindingObserver {
         // como play de verdade quando já está tocando (troca de faixa
         // por proxima()/anterior() ou avanço automático no fim da faixa).
         if (_player.playing) {
-          _registrarPlayDaFaixaAtual();
+          _agendarRegistroPlay();
         }
       }
       _salvarEstado();
@@ -119,10 +126,24 @@ class PlayerService extends ChangeNotifier with WidgetsBindingObserver {
       await _player.setAudioSource(_playlist!, initialIndex: indiceInicial);
       await _player.play();
       _salvarEstado();
-      _registrarPlayDaFaixaAtual();
+      _agendarRegistroPlay();
     } catch (_) {
       _avisarErroDeReproducao();
     }
+  }
+
+  /// Agenda o registro do play pra daqui a `_tempoMinimoParaContarPlay`
+  /// — só dispara de verdade se, quando o tempo passar, ainda estiver
+  /// na MESMA faixa e ainda tocando (senão foi só um pulo rápido pela
+  /// fila, não uma escuta de verdade).
+  void _agendarRegistroPlay() {
+    _registroPlayTimer?.cancel();
+    final indiceQuandoAgendou = _indiceAtual;
+    _registroPlayTimer = Timer(_tempoMinimoParaContarPlay, () {
+      if (_indiceAtual == indiceQuandoAgendou && _player.playing) {
+        _registrarPlayDaFaixaAtual();
+      }
+    });
   }
 
   /// Telemetria pro painel administrativo — dispara sem bloquear nem
@@ -376,6 +397,7 @@ class PlayerService extends ChangeNotifier with WidgetsBindingObserver {
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _sleepTimer?.cancel();
+    _registroPlayTimer?.cancel();
     _player.dispose();
     super.dispose();
   }
