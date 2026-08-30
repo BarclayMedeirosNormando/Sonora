@@ -19,6 +19,11 @@ dependencies:
   just_audio_background: ^0.0.1-beta.17
   audio_service: any
 
+  # Pede permissão de notificação (Android 13+) — sem ela a notificação
+  # do player em segundo plano nunca aparece, mesmo com o foreground
+  # service rodando por baixo.
+  permission_handler: ^11.3.1
+
   # Persistência local (cache do App_ID, preferências)
   shared_preferences: ^2.3.2
 

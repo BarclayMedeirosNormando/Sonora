@@ -1,5 +1,7 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:just_audio_background/just_audio_background.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart';
 
 import 'core/app_keys.dart';
@@ -14,6 +16,18 @@ void main() async {
   // Precisa estar pronto antes de usar SharedPreferences/plugins abaixo,
   // já que main() agora faz await antes do runApp().
   WidgetsFlutterBinding.ensureInitialized();
+
+  // No Android 13+ (API 33+), sem essa permissão concedida pelo usuário
+  // a notificação do player em segundo plano NUNCA aparece — mesmo com o
+  // foreground service rodando por baixo. Sem notificação visível, o
+  // Android (e principalmente MIUI/HyperOS da Xiaomi) trata o app como
+  // "inativo" e mata o processo depois de alguns minutos em segundo
+  // plano, mesmo tocando música. Pedida antes do JustAudioBackground.init
+  // pra já valer pro canal de notificação criado logo em seguida. Não se
+  // aplica na Web (kIsWeb) — lá não existe foreground service/notificação.
+  if (!kIsWeb) {
+    await Permission.notification.request();
+  }
 
   // Habilita o serviço de mídia em primeiro plano do Android (notificação
   // de player + wake lock) — sem isso, o playback é suspenso pelo sistema
