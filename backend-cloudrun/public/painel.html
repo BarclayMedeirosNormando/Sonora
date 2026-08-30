@@ -126,6 +126,13 @@
   .legend .item { display: flex; align-items: center; gap: 6px; } .legend .swatch { width: 10px; height: 10px; border-radius: 2px; }
   .foot-note { font-size: 12px; color: var(--text-muted); margin-top: 6px; }
 
+  .tabs { display: flex; gap: 4px; margin-bottom: 28px; border-bottom: 1px solid var(--border); overflow-x: auto; }
+  .tab-btn { background: none; border: none; padding: 10px 16px; font-size: 13px; font-weight: 550;
+    color: var(--text-muted); cursor: pointer; border-bottom: 2px solid transparent; white-space: nowrap; font-family: inherit; }
+  .tab-btn:hover { color: var(--text-primary); }
+  .tab-btn.active { color: var(--text-primary); border-bottom-color: var(--series-1); }
+  .tab-panel[hidden] { display: none; }
+
   @media (max-width: 760px) { .kpi-row { grid-template-columns: repeat(2, 1fr); } .grid-2, .grid-2b { grid-template-columns: 1fr; } }
 
   .pill.error { background: rgba(208,59,59,0.12); color: var(--status-critical); }
@@ -157,105 +164,122 @@
     <button id="refresh-btn">↻ Atualizar</button>
   </header>
 
-  <section>
-    <div class="kpi-row" id="kpi-row">
-      <div class="card stat-tile"><div class="label">Total de álbuns</div><div class="value" id="kpi-albuns">—</div><div class="delta flat" id="kpi-albuns-sub"></div></div>
-      <div class="card stat-tile"><div class="label">Total de faixas</div><div class="value" id="kpi-faixas">—</div><div class="delta flat" id="kpi-faixas-sub"></div></div>
-      <div class="card stat-tile"><div class="label">Dispositivos liberados</div><div class="value" id="kpi-liberados">—</div><div class="delta flat" id="kpi-liberados-sub"></div></div>
-      <div class="card stat-tile"><div class="label">Pendentes de liberação</div><div class="value" id="kpi-pendentes">—</div><div class="delta warn" id="kpi-pendentes-sub"></div></div>
-    </div>
-  </section>
+  <div class="tabs" role="tablist">
+    <button class="tab-btn active" data-tab="geral" type="button">Visão geral</button>
+    <button class="tab-btn" data-tab="biblioteca" type="button">Biblioteca</button>
+    <button class="tab-btn" data-tab="dispositivos" type="button">Dispositivos</button>
+    <button class="tab-btn" data-tab="usuarios" type="button">Usuários</button>
+    <button class="tab-btn" data-tab="engajamento" type="button">Engajamento</button>
+  </div>
 
-  <section>
-    <h2>Sistema</h2>
-    <div class="grid-2b">
-      <div class="card">
-        <h3>Cache de mídia</h3>
-        <p class="sub">Arquivos guardados no proxy (Cloud Storage)</p>
-        <div class="cache-midia-row" id="cache-midia-info"></div>
+  <div class="tab-panel" data-tab-panel="geral">
+    <section>
+      <div class="kpi-row" id="kpi-row">
+        <div class="card stat-tile"><div class="label">Total de álbuns</div><div class="value" id="kpi-albuns">—</div><div class="delta flat" id="kpi-albuns-sub"></div></div>
+        <div class="card stat-tile"><div class="label">Total de faixas</div><div class="value" id="kpi-faixas">—</div><div class="delta flat" id="kpi-faixas-sub"></div></div>
+        <div class="card stat-tile"><div class="label">Dispositivos liberados</div><div class="value" id="kpi-liberados">—</div><div class="delta flat" id="kpi-liberados-sub"></div></div>
+        <div class="card stat-tile"><div class="label">Pendentes de liberação</div><div class="value" id="kpi-pendentes">—</div><div class="delta warn" id="kpi-pendentes-sub"></div></div>
       </div>
-      <div class="card">
-        <h3>Alertas recentes</h3>
-        <p class="sub">Erros do backend nos últimos dias</p>
-        <div id="alertas-lista"></div>
-      </div>
-    </div>
-  </section>
+    </section>
 
-  <section>
-    <h2>Biblioteca</h2>
-    <div class="grid-2">
-      <div class="card">
-        <h3>Crescimento da biblioteca</h3>
-        <p class="sub">Total de faixas a cada geração de cache</p>
-        <div class="chart-wrap" id="chart-growth"></div>
-      </div>
-      <div class="card">
-        <h3>Última geração de cache</h3>
-        <p class="sub">Resultado do <code>/gerar-cache</code> mais recente</p>
-        <div id="ultima-geracao" style="display:flex; flex-direction:column; gap:12px; margin-top:4px;"></div>
-      </div>
-    </div>
-    <div class="card" style="margin-top:14px;">
-      <h3>Últimas gerações de cache</h3>
-      <p class="sub">Histórico de execuções do <code>/gerar-cache</code>, incluindo falhas</p>
-      <table><thead><tr><th>Quando</th><th>Duração</th><th>Resultado</th></tr></thead><tbody id="geracoes-tbody"></tbody></table>
-      <p class="foot-note" id="geracoes-vazio" style="display:none;">Ainda não há gerações registradas.</p>
-    </div>
-  </section>
-
-  <section>
-    <h2>Dispositivos &amp; acesso</h2>
-    <div class="grid-2b">
-      <div class="card">
-        <h3>Aguardando liberação</h3>
-        <p class="sub">Dispositivos novos, cadastrados automaticamente como bloqueados</p>
-        <table><thead><tr><th>Dispositivo</th><th>Desde</th><th>Status</th><th></th></tr></thead><tbody id="pendentes-tbody"></tbody></table>
-        <p class="foot-note" id="pendentes-vazio" style="display:none;">Nenhum dispositivo pendente agora.</p>
-      </div>
-      <div class="card">
-        <h3>Liberados × bloqueados</h3>
-        <p class="sub">Distribuição atual dos dispositivos cadastrados</p>
-        <div class="chart-wrap" id="chart-devices"></div>
-        <div class="legend">
-          <div class="item"><span class="swatch" style="background:var(--series-1)"></span><span id="legend-liberados">Liberados</span></div>
-          <div class="item"><span class="swatch" style="background:var(--status-warning)"></span><span id="legend-bloqueados">Bloqueados</span></div>
+    <section>
+      <h2>Sistema</h2>
+      <div class="grid-2b">
+        <div class="card">
+          <h3>Cache de mídia</h3>
+          <p class="sub">Arquivos guardados no proxy (Cloud Storage)</p>
+          <div class="cache-midia-row" id="cache-midia-info"></div>
+        </div>
+        <div class="card">
+          <h3>Alertas recentes</h3>
+          <p class="sub">Erros do backend nos últimos dias</p>
+          <div id="alertas-lista"></div>
         </div>
       </div>
-    </div>
-  </section>
+    </section>
+  </div>
 
-  <section>
-    <h2>Usuários</h2>
-    <div class="card">
-      <h3>Todos os liberados</h3>
-      <p class="sub">Clique num nome pra ver o perfil</p>
-      <table><thead><tr><th></th><th>Nome</th><th>Liberado em</th><th>Tempo de casa</th><th>Status</th></tr></thead><tbody id="users-tbody"></tbody></table>
-    </div>
-  </section>
+  <div class="tab-panel" data-tab-panel="biblioteca" hidden>
+    <section>
+      <h2>Biblioteca</h2>
+      <div class="grid-2">
+        <div class="card">
+          <h3>Crescimento da biblioteca</h3>
+          <p class="sub">Total de faixas a cada geração de cache</p>
+          <div class="chart-wrap" id="chart-growth"></div>
+        </div>
+        <div class="card">
+          <h3>Última geração de cache</h3>
+          <p class="sub">Resultado do <code>/gerar-cache</code> mais recente</p>
+          <div id="ultima-geracao" style="display:flex; flex-direction:column; gap:12px; margin-top:4px;"></div>
+        </div>
+      </div>
+      <div class="card" style="margin-top:14px;">
+        <h3>Últimas gerações de cache</h3>
+        <p class="sub">Histórico de execuções do <code>/gerar-cache</code>, incluindo falhas</p>
+        <table><thead><tr><th>Quando</th><th>Duração</th><th>Resultado</th></tr></thead><tbody id="geracoes-tbody"></tbody></table>
+        <p class="foot-note" id="geracoes-vazio" style="display:none;">Ainda não há gerações registradas.</p>
+      </div>
+    </section>
+  </div>
 
-  <section>
-    <h2>Engajamento <span class="tag" id="engajamento-tag" style="display:none;">ainda sem dados registrados</span></h2>
-    <div class="grid-2">
-      <div class="card">
-        <h3>Faixas mais tocadas</h3>
-        <p class="sub">Últimos 14 dias</p>
-        <div class="chart-wrap" id="chart-top-tracks"></div>
+  <div class="tab-panel" data-tab-panel="dispositivos" hidden>
+    <section>
+      <h2>Dispositivos &amp; acesso</h2>
+      <div class="grid-2b">
+        <div class="card">
+          <h3>Aguardando liberação</h3>
+          <p class="sub">Dispositivos novos, cadastrados automaticamente como bloqueados</p>
+          <table><thead><tr><th>Dispositivo</th><th>Desde</th><th>Status</th><th></th></tr></thead><tbody id="pendentes-tbody"></tbody></table>
+          <p class="foot-note" id="pendentes-vazio" style="display:none;">Nenhum dispositivo pendente agora.</p>
+        </div>
+        <div class="card">
+          <h3>Liberados × bloqueados</h3>
+          <p class="sub">Distribuição atual dos dispositivos cadastrados</p>
+          <div class="chart-wrap" id="chart-devices"></div>
+          <div class="legend">
+            <div class="item"><span class="swatch" style="background:var(--series-1)"></span><span id="legend-liberados">Liberados</span></div>
+            <div class="item"><span class="swatch" style="background:var(--status-warning)"></span><span id="legend-bloqueados">Bloqueados</span></div>
+          </div>
+        </div>
       </div>
+    </section>
+  </div>
+
+  <div class="tab-panel" data-tab-panel="usuarios" hidden>
+    <section>
+      <h2>Usuários</h2>
       <div class="card">
-        <h3>Plays por dia</h3>
-        <p class="sub">Últimos 14 dias</p>
-        <div class="chart-wrap" id="chart-plays"></div>
+        <h3>Todos os liberados</h3>
+        <p class="sub">Clique num nome pra ver o perfil</p>
+        <table><thead><tr><th></th><th>Nome</th><th>Liberado em</th><th>Tempo de casa</th><th>Status</th></tr></thead><tbody id="users-tbody"></tbody></table>
       </div>
-    </div>
-    <div class="card" style="margin-top:14px;">
-      <h3>Álbuns mais tocados</h3>
-      <p class="sub">Últimos 14 dias</p>
-      <div class="chart-wrap" id="chart-top-albums"></div>
-    </div>
-  </section>
+    </section>
+  </div>
+
+  <div class="tab-panel" data-tab-panel="engajamento" hidden>
+    <section>
+      <h2>Engajamento <span class="tag" id="engajamento-tag" style="display:none;">ainda sem dados registrados</span></h2>
+      <div class="grid-2">
+        <div class="card">
+          <h3>Faixas mais tocadas</h3>
+          <p class="sub">Últimos 14 dias</p>
+          <div class="chart-wrap" id="chart-top-tracks"></div>
+        </div>
+        <div class="card">
+          <h3>Plays por dia</h3>
+          <p class="sub">Últimos 14 dias</p>
+          <div class="chart-wrap" id="chart-plays"></div>
+        </div>
+      </div>
+      <div class="card" style="margin-top:14px;">
+        <h3>Álbuns mais tocados</h3>
+        <p class="sub">Últimos 14 dias</p>
+        <div class="chart-wrap" id="chart-top-albums"></div>
+      </div>
+    </section>
+  </div>
 </div>
-
 <script>
 (function () {
   const params = new URLSearchParams(location.search);
@@ -599,6 +623,23 @@
       showBanner('error', `<b>Falha ao carregar o painel:</b> ${err.message}. Confira se a URL tem <code>?chave=SUACHAVE</code> correta.`);
     }
   }
+
+  // ---------- Abas ----------
+  const TABS_KEY = 'sonora_painel_aba';
+  function ativarAba(nome) {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === nome));
+    document.querySelectorAll('.tab-panel').forEach(p => { p.hidden = p.dataset.tabPanel !== nome; });
+    try { localStorage.setItem(TABS_KEY, nome); } catch (e) {}
+  }
+  document.querySelectorAll('.tab-btn').forEach(btn => {
+    btn.addEventListener('click', () => ativarAba(btn.dataset.tab));
+  });
+  let abaInicial = 'geral';
+  try {
+    const salva = localStorage.getItem(TABS_KEY);
+    if (salva && document.querySelector(`.tab-btn[data-tab="${salva}"]`)) abaInicial = salva;
+  } catch (e) {}
+  ativarAba(abaInicial);
 
   document.getElementById('refresh-btn').addEventListener('click', carregar);
   carregar();
