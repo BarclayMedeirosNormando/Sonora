@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:http/http.dart' as http;
 
 import '../core/constants.dart';
@@ -58,13 +57,16 @@ class ApiService {
   /// nesse limite com muita gente abrindo o app ao mesmo tempo.
   static Future<Map<String, dynamic>> obterCacheBiblioteca() async {
     return _comRetentativas(() async {
-      final uri = kIsWeb
-          ? Uri.parse('${AppConstants.cloudRunBaseUrl}/cache')
-          : Uri.parse(
-              'https://www.googleapis.com/drive/v3/files/'
-              '${AppConstants.libraryCacheFileId}'
-              '?alt=media&key=${AppConstants.driveApiKey}',
-            );
+      // Sempre via Cloud Run (mudou em 30/08/2026 — antes, fora da Web,
+      // ia direto no Drive com alt=media&key=..., mesmo padrão de URL
+      // usado pro streaming de faixa que já causou bloqueio por
+      // anti-abuso do Drive (ver sonora_proxy_midia.md). Um HTTP 403
+      // batendo direto nesse endpoint quebrava a Biblioteca inteira sem
+      // aviso. Centralizar no Cloud Run não elimina o uso da mesma
+      // DRIVE_API_KEY por baixo, mas concentra as chamadas numa única
+      // origem confiável (o servidor) em vez de cada celular batendo
+      // direto no Drive.
+      final uri = Uri.parse('${AppConstants.cloudRunBaseUrl}/cache');
 
       final response = await http.get(uri);
       if (response.statusCode != 200) {
