@@ -285,26 +285,41 @@ Rebuildar e reinstalar o app (versão `2.5.1+21`, já com o `appId`
 sendo enviado) logo em seguida ao `gcloud run deploy` evita esse
 período sem música.
 
-**Pendente, fora do escopo do código** (é mudança de IAM no bucket, não
-de app): o bucket `sonora-midia-cache` está com `roles/storage.objectViewer`
-pra `allUsers` no nível do BUCKET — isso inclui permissão de LISTAR os
-objetos, não só ler um que você já sabe o nome. Quem listar o bucket
-descobre todos os `fileId` já cacheados sem precisar nunca passar pelo
-`/midia` (e portanto sem nunca passar pelo gate de `appId` acima). Pra
-fechar isso, trocar a permissão de nível de bucket por ACL por objeto
-(sem list, só o objeto individual fica público):
+**RESOLVIDO (31/08/2026)** — checado e reforçado. A auditoria original
+suspeitou que o bucket `sonora-midia-cache` tivesse `roles/storage.objectViewer`
+pra `allUsers` no nível do BUCKET (o que incluiria permissão de LISTAR
+todos os objetos, não só ler um já conhecido). Checagem real via
+`gcloud storage buckets get-iam-policy` e `gcloud storage buckets describe
+--format="default(acl)"` mostrou que **não existia** nenhum vínculo pra
+`allUsers`/`allAuthenticatedUsers` — nem na política de IAM, nem na ACL
+de bucket. Ou seja, o bucket nunca esteve listável publicamente — o
+acesso de leitura sempre foi via ACL por objeto (cada arquivo com sua
+própria entrada pública), que não concede list. Alarme falso, mas
+reforçado mesmo assim:
 
-```
-gcloud storage buckets remove-iam-policy-binding gs://sonora-midia-cache \
-  --member=allUsers --role=roles/storage.objectViewer
+- `uniform bucket-level access` desligado (`--no-uniform-bucket-level-access`),
+  necessário pra ACL por objeto funcionar de forma confiável.
+- `gsutil defacl set public-read` — todo objeto NOVO gravado pelo proxy
+  já nasce público de leitura (sem list) automaticamente.
+- `gsutil -m acl set -R public-read gs://sonora-midia-cache/midia/` —
+  aplicado retroativamente nos 69 objetos já existentes no bucket
+  (precisou de uma permissão temporária extra pro Barclay, já revogada
+  depois — os objetos foram criados pela conta de serviço, que detinha
+  a ACL original).
+- Testado: música tocando normal pela URL pública depois do ajuste.
 
-gsutil defacl set public-read gs://sonora-midia-cache
-```
+**`driveApiKey` restrita (31/08/2026)** — a chave hardcoded em
+`lib/core/constants.dart` (`AIzaSyA8gp...`, também usada como
+`DRIVE_API_KEY` no Cloud Run) foi restrita no Console/`gcloud` só à
+Drive API (`gcloud services api-keys update KEY --api-target=service=drive.googleapis.com`,
+confirmado via `--format="yaml(restrictions)"`). Não dava pra restringir
+por app Android nem por IP/referrer — a mesma chave é usada tanto pelo
+Cloud Run (`/cache`) quanto direto por todo celular (capa de álbum), sem
+IP fixo nem cabeçalho de app nativo confiável. Mas restringir por API já
+garante que, se vazar, não serve pra mais nada no projeto.
 
-A segunda linha faz com que todo objeto NOVO gravado pelo proxy já
-suba público de leitura (sem list) automaticamente — os objetos que já
-estão no bucket hoje precisam do ACL aplicado retroativamente:
-
-```
-gsutil -m acl set -R public-read gs://sonora-midia-cache/midia/
-```
+**Status final da auditoria (31/08/2026)**: os 6 itens levantados —
+gate de appId em `/cache`/`/midia`, rate limiting, chave do painel por
+header, confirmação em `/api/zerar-plays`, listagem pública do bucket
+(alarme falso, reforçado do mesmo jeito) e restrição da `driveApiKey`
+— estão todos implementados e validados em produção.
