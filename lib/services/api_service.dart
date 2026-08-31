@@ -55,7 +55,7 @@ class ApiService {
   /// simultâneas em contas Google normais — sobra só o action=validar
   /// (rápido) passando por lá, reduzindo bastante o risco de esbarrar
   /// nesse limite com muita gente abrindo o app ao mesmo tempo.
-  static Future<Map<String, dynamic>> obterCacheBiblioteca() async {
+  static Future<Map<String, dynamic>> obterCacheBiblioteca(String appId) async {
     return _comRetentativas(() async {
       // Sempre via Cloud Run (mudou em 30/08/2026 — antes, fora da Web,
       // ia direto no Drive com alt=media&key=..., mesmo padrão de URL
@@ -66,7 +66,13 @@ class ApiService {
       // DRIVE_API_KEY por baixo, mas concentra as chamadas numa única
       // origem confiável (o servidor) em vez de cada celular batendo
       // direto no Drive.
-      final uri = Uri.parse('${AppConstants.cloudRunBaseUrl}/cache');
+      // appId vai junto desde o reforco de seguranca: o backend agora
+      // exige que o App_ID esteja liberado antes de devolver o
+      // catalogo -- antes, /cache respondia pra qualquer um, sem checar
+      // liberacao nenhuma.
+      final uri = Uri.parse('${AppConstants.cloudRunBaseUrl}/cache').replace(
+        queryParameters: {'appId': appId},
+      );
 
       final response = await http.get(uri);
       if (response.statusCode != 200) {

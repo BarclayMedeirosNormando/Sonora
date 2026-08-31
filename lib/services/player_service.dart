@@ -37,6 +37,15 @@ class PlayerService extends ChangeNotifier with WidgetsBindingObserver {
   static const _tempoMinimoParaContarPlay = Duration(seconds: 8);
   Timer? _registroPlayTimer;
 
+  // App_ID do dispositivo, carregado uma vez e reaproveitado -- usado
+  // pra autenticar /midia e /cache no backend (reforco de seguranca:
+  // antes, qualquer um com a URL de streaming conseguia tocar qualquer
+  // faixa sem nunca ter sido liberado na planilha).
+  String? _appIdCache;
+  Future<String> _obterAppId() async {
+    return _appIdCache ??= await DeviceIdService.getOrCreateDeviceId();
+  }
+
   PlayerService({DownloadService? downloadService})
       : _downloadService = downloadService {
     WidgetsBinding.instance.addObserver(this);
@@ -82,7 +91,7 @@ class PlayerService extends ChangeNotifier with WidgetsBindingObserver {
   /// Fonte de áudio pra uma faixa: usa o arquivo já baixado no aparelho
   /// (ouvir offline) quando existir, senão cai pro streaming direto do
   /// Drive de sempre.
-  AudioSource _fonteDe(Track track) {
+  AudioSource _fonteDe(Track track, String appId) {
     // MediaItem alimenta a notificação de mídia do just_audio_background
     // (título exibido, artista/álbum, capa e ícone de play/pause no
     // lockscreen etc) — sem artUri a notificação fica com ícone genérico
@@ -104,7 +113,7 @@ class PlayerService extends ChangeNotifier with WidgetsBindingObserver {
       return AudioSource.uri(Uri.file(local), tag: tag);
     }
     return AudioSource.uri(
-      Uri.parse(track.streamUrl(AppConstants.cloudRunBaseUrl)),
+      Uri.parse(track.streamUrl(AppConstants.cloudRunBaseUrl, appId)),
       tag: tag,
     );
   }
@@ -112,6 +121,7 @@ class PlayerService extends ChangeNotifier with WidgetsBindingObserver {
   /// Começa a tocar uma fila de faixas a partir de um índice (ex: as faixas
   /// da pasta atual, começando na que o usuário tocou).
   Future<void> tocarFila(List<Track> faixas, int indiceInicial) async {
+    final appId = await _obterAppId();
     _fila
       ..clear()
       ..addAll(faixas);
@@ -119,7 +129,7 @@ class PlayerService extends ChangeNotifier with WidgetsBindingObserver {
     notifyListeners();
 
     _playlist = ConcatenatingAudioSource(
-      children: faixas.map(_fonteDe).toList(),
+      children: faixas.map((t) => _fonteDe(t, appId)).toList(),
     );
 
     try {
@@ -286,8 +296,9 @@ class PlayerService extends ChangeNotifier with WidgetsBindingObserver {
       return;
     }
 
+    final appId = await _obterAppId();
     final posicaoInsercao = _indiceAtual + 1;
-    await _playlist!.insert(posicaoInsercao, _fonteDe(track));
+    await _playlist!.insert(posicaoInsercao, _fonteDe(track, appId));
     _fila.insert(posicaoInsercao, track);
     notifyListeners();
     _salvarEstado();
@@ -353,8 +364,9 @@ class PlayerService extends ChangeNotifier with WidgetsBindingObserver {
       // deixar _fila/_playlist preenchidos com algo que o player não tem
       // de verdade, porque isso pode travar tentativas de tocar algo novo
       // depois.
+      final appId = await _obterAppId();
       final playlistRestaurada = ConcatenatingAudioSource(
-        children: listaFaixas.map(_fonteDe).toList(),
+        children: listaFaixas.map((t) => _fonteDe(t, appId)).toList(),
       );
 
       await _player.setAudioSource(

@@ -8,6 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../core/constants.dart';
 import '../models/track.dart';
+import 'device_id_service.dart';
 
 enum StatusDownload { nenhum, baixando, baixado, erro }
 
@@ -114,7 +115,8 @@ class DownloadService extends ChangeNotifier {
       final pasta = await _pastaDownloads();
       final destino = File('${pasta.path}/${track.id}.mp3');
 
-      final uri = Uri.parse(track.streamUrl(AppConstants.cloudRunBaseUrl));
+      final appId = await DeviceIdService.getOrCreateDeviceId();
+      final uri = Uri.parse(track.streamUrl(AppConstants.cloudRunBaseUrl, appId));
       final resposta = await http.Client().send(http.Request('GET', uri));
       if (resposta.statusCode != 200) {
         throw Exception('HTTP ${resposta.statusCode}');

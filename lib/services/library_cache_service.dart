@@ -7,6 +7,7 @@ import '../models/album.dart';
 import '../models/pasta_conteudo.dart';
 import '../models/track.dart';
 import 'api_service.dart';
+import 'device_id_service.dart';
 
 /// Lê o cache pré-computado da biblioteca inteira (gerado pelo script
 /// backend/CacheBiblioteca.gs, servido via ApiService.obterCacheBiblioteca
@@ -117,7 +118,8 @@ class LibraryCacheService {
 
   static Future<void> _buscarDaRedeEAtualizar(SharedPreferences prefs) async {
     try {
-      final body = await ApiService.obterCacheBiblioteca();
+      final appId = await DeviceIdService.getOrCreateDeviceId();
+      final body = await ApiService.obterCacheBiblioteca(appId);
       _aplicarBody(body);
       await prefs.setString(_prefsKeyCacheJson, jsonEncode(body));
       await prefs.setInt(_prefsKeyCacheEm, DateTime.now().millisecondsSinceEpoch);

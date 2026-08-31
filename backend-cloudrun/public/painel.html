@@ -288,20 +288,22 @@
   const color = (name) => cs.getPropertyValue(name).trim();
   const fmt = (n) => Number(n || 0).toLocaleString('pt-BR');
 
-  function qs(path) {
-    const sep = path.includes('?') ? '&' : '?';
-    return path + sep + 'chave=' + encodeURIComponent(CHAVE);
-  }
+  // A chave viaja so na URL da propria pagina /painel (link clicavel).
+  // As chamadas de API feitas por aqui (fetch) mandam a chave num
+  // header em vez de query string -- headers customizados nao ficam
+  // registrados nos logs de acesso automaticos do Cloud Run do jeito
+  // que a URL fica, entao isso reduz onde essa chave pode vazar sem
+  // mudar como o Barclay usa o painel (reforco de seguranca).
   async function apiGet(path) {
-    const r = await fetch(qs(path));
+    const r = await fetch(path, { headers: { 'X-Painel-Chave': CHAVE } });
     const data = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(data.erro || ('HTTP ' + r.status));
     return data;
   }
   async function apiPost(path, body) {
-    const r = await fetch(qs(path), {
+    const r = await fetch(path, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'X-Painel-Chave': CHAVE },
       body: JSON.stringify(body || {}),
     });
     const data = await r.json().catch(() => ({}));

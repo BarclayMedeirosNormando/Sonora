@@ -46,11 +46,19 @@
 const stream = require('stream');
 const path = require('path');
 const express = require('express');
+const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
 const { Firestore } = require('@google-cloud/firestore');
 const { Storage } = require('@google-cloud/storage');
 
 const app = express();
 const PORT = process.env.PORT || 8080;
+
+// Cloud Run entrega as requisicoes atraves de um proxy (Google Front
+// End) -- sem isso, o IP que o express/express-rate-limit enxerga e
+// sempre o do proxy, nao o do cliente de verdade, e todo mundo cairia
+// no mesmo "balde" de rate limit.
+app.set('trust proxy', 1);
 
 // Configuração via variáveis de ambiente (definidas no deploy do Cloud
 // Run — ver README.md). Valores default abaixo são os mesmos já usados
@@ -85,6 +93,40 @@ const GERAR_CACHE_CHAVE = process.env.GERAR_CACHE_CHAVE || '';
 const PAINEL_CHAVE = process.env.PAINEL_CHAVE || '';
 
 app.use(express.json());
+app.use(helmet({ contentSecurityPolicy: false })); // CSP desligado: painel.html tem <script> inline
+
+// ---- Protecao basica contra abuso (reforco de seguranca) ----
+// Quatro limitadores separados, calibrados pro uso real de cada rota --
+// nao e auth de verdade (isso continua sendo a CHAVE / o appId liberado),
+// so trava enxurrada.
+const limiteValidar = rateLimit({
+  windowMs: 5 * 60 * 1000,
+  max: 30, // um app real chama /validar rarissimas vezes; 30/5min sobra
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { erro: 'Muitas tentativas. Aguarde alguns minutos.' },
+});
+const limitePainel = rateLimit({
+  windowMs: 5 * 60 * 1000,
+  max: 60, // cobre o painel abrindo varias abas/secoes sem travar o Barclay
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { erro: 'Muitas tentativas. Aguarde alguns minutos.' },
+});
+const limiteGerarCache = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 3,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { erro: 'Muitas tentativas de gerar o cache. Aguarde alguns minutos.' },
+});
+const limiteMidia = rateLimit({
+  windowMs: 5 * 60 * 1000,
+  max: 300, // generoso -- e a rota de streaming/cache usada o tempo todo pelo app
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { erro: 'Muitas requisicoes. Aguarde um pouco.' },
+});
 
 let sheetsClientPromise = null;
 let driveClientPromise = null;
@@ -116,7 +158,14 @@ function getStorage() {
 }
 
 function chavePainelValida(req) {
-  return !PAINEL_CHAVE || req.query.chave === PAINEL_CHAVE;
+  // Aceita a chave tanto por query string (?chave=X -- necessario pra
+  // navegacao normal do /painel, que e um link clicavel) quanto por
+  // header X-Painel-Chave (usado pelas chamadas de API feitas pelo
+  // proprio painel.html via JS, pra nao deixar a chave espalhada nos
+  // logs de acesso do Cloud Run, que registram a URL completa mas nao
+  // headers customizados).
+  const chaveEnviada = req.get('X-Painel-Chave') || req.query.chave;
+  return !PAINEL_CHAVE || chaveEnviada === PAINEL_CHAVE;
 }
 
 /**
@@ -182,12 +231,66 @@ async function getSheetsClient() {
   return sheetsClientPromise;
 }
 
+// ---- Cache em memoria de App_IDs liberados (reforco de seguranca) ----
+// /cache e /midia/:fileId, antes desse reforco, respondiam pra qualquer
+// um que soubesse a URL -- o gate de "liberado" so existia dentro do
+// app (tela de validacao), nunca no backend. Agora as duas rotas tambem
+// exigem ?appId=X liberado. Consultar a planilha a cada play seria
+// lento (e caro em cota) -- por isso um cache simples em memoria,
+// renovado no maximo a cada 30s.
+let liberadosCache = { set: null, expiraEm: 0 };
+const LIBERADOS_CACHE_TTL_MS = 30 * 1000;
+
+async function obterLiberados() {
+  const agora = Date.now();
+  if (liberadosCache.set && agora < liberadosCache.expiraEm) {
+    return liberadosCache.set;
+  }
+  const sheets = await getSheetsClient();
+  const leitura = await sheets.spreadsheets.values.get({
+    spreadsheetId: PLANILHA_ID,
+    range: `${ABA_NOME}!A:D`,
+  });
+  const linhas = (leitura.data.values || []).slice(1);
+  const set = new Set(
+    linhas
+      .filter((l) => String(l[1] || '').trim().toLowerCase() === 'liberado')
+      .map((l) => l[0])
+  );
+  liberadosCache = { set, expiraEm: agora + LIBERADOS_CACHE_TTL_MS };
+  return set;
+}
+
+/**
+ * Middleware: exige ?appId=X liberado na planilha antes de servir a
+ * rota. Usado em /cache e /midia/:fileId -- as duas rotas que entregam
+ * conteudo de verdade (catalogo e audio), diferente de /validar (que E
+ * a propria checagem) e das rotas /api/* (protegidas por PAINEL_CHAVE,
+ * nao por App_ID).
+ */
+async function exigirAppIdLiberado(req, res, next) {
+  const appId = req.query.appId;
+  if (!appId) {
+    return res.status(401).json({ erro: 'Parametro appId ausente.' });
+  }
+  try {
+    const liberados = await obterLiberados();
+    if (!liberados.has(appId)) {
+      return res.status(403).json({ erro: 'App_ID nao liberado.' });
+    }
+    next();
+  } catch (erro) {
+    console.error('Erro ao checar liberacao do appId:', erro);
+    return res.status(503).json({ erro: 'Falha ao checar liberacao. Tente novamente.' });
+  }
+}
+
 /**
  * Checa se o App_ID está com Status "Liberado" na planilha de controle.
  * Se o ID ainda não existir, cadastra automaticamente como "Bloqueado"
  * (mesma lógica de validarId() em backend/AcessoWebApp.gs).
  */
-app.get('/validar', async (req, res) => {
+app.get('/validar', limiteValidar, async (req, res) => {
   const appId = req.query.id;
   if (!appId) {
     return res.json({ erro: 'Parâmetro id ausente.' });
@@ -233,7 +336,7 @@ app.get('/validar', async (req, res) => {
  * Flutter Web, que precisa de um endpoint com CORS liberado; fora da Web,
  * o app já busca esse arquivo direto do Drive (ver ApiService no Flutter).
  */
-app.get('/cache', async (req, res) => {
+app.get('/cache', limiteMidia, exigirAppIdLiberado, async (req, res) => {
   try {
     const url =
       `https://www.googleapis.com/drive/v3/files/${CACHE_FILE_ID}` +
@@ -281,7 +384,7 @@ app.get('/cache', async (req, res) => {
  * enfim tinha terminado por trás) funcionava normal. Baixar tudo pra um
  * Buffer primeiro elimina essa dependência entre as duas coisas.
  */
-app.get('/midia/:fileId', async (req, res) => {
+app.get('/midia/:fileId', limiteMidia, exigirAppIdLiberado, async (req, res) => {
   const { fileId } = req.params;
   if (!/^[a-zA-Z0-9_-]+$/.test(fileId || '')) {
     return res.status(400).json({ erro: 'fileId inválido.' });
@@ -383,11 +486,17 @@ async function listarFilhos(drive, pastaId) {
  * Flutter (que já lê esse arquivo) não precise de nenhuma mudança pra
  * testar essa geração alternativa.
  */
-app.get('/gerar-cache', async (req, res) => {
+let gerandoCache = false;
+
+app.get('/gerar-cache', limiteGerarCache, async (req, res) => {
   if (GERAR_CACHE_CHAVE && req.query.chave !== GERAR_CACHE_CHAVE) {
     return res.status(403).json({ erro: 'Chave ausente ou incorreta.' });
   }
+  if (gerandoCache) {
+    return res.status(429).json({ erro: 'Ja existe uma geracao de cache em andamento -- aguarde ela terminar.' });
+  }
 
+  gerandoCache = true;
   const inicio = Date.now();
   try {
     const drive = await getDriveClient();
@@ -517,6 +626,8 @@ app.get('/gerar-cache', async (req, res) => {
       detalhe: String((erro && erro.message) || erro),
       duracaoMs: Date.now() - inicio,
     });
+  } finally {
+    gerandoCache = false;
   }
 });
 
@@ -569,7 +680,7 @@ async function estatisticasCacheMidia() {
   }
 }
 
-app.get('/api/resumo', async (req, res) => {
+app.get('/api/resumo', limitePainel, async (req, res) => {
   if (!chavePainelValida(req)) return res.status(403).json({ erro: 'Chave ausente ou incorreta.' });
   try {
     const db = getFirestore();
@@ -615,7 +726,7 @@ app.get('/api/resumo', async (req, res) => {
  * /gerar-cache falhando, etc.) sem precisar checar o Cloud Logging
  * manualmente (30/08/2026).
  */
-app.get('/api/alertas', async (req, res) => {
+app.get('/api/alertas', limitePainel, async (req, res) => {
   if (!chavePainelValida(req)) return res.status(403).json({ erro: 'Chave ausente ou incorreta.' });
   try {
     const snap = await getFirestore()
@@ -642,7 +753,7 @@ app.get('/api/alertas', async (req, res) => {
  * Lista completa de dispositivos/usuários da planilha, com o engajamento
  * de cada um (últimos 14 dias) quando disponível — pro painel.
  */
-app.get('/api/usuarios', async (req, res) => {
+app.get('/api/usuarios', limitePainel, async (req, res) => {
   if (!chavePainelValida(req)) return res.status(403).json({ erro: 'Chave ausente ou incorreta.' });
   try {
     const sheets = await getSheetsClient();
@@ -687,7 +798,7 @@ app.get('/api/usuarios', async (req, res) => {
  * appId, sem orderBy) pra não precisar de índice composto — ordena e
  * corta em memória, tranquilo no volume de uso atual.
  */
-app.get('/api/usuario-plays', async (req, res) => {
+app.get('/api/usuario-plays', limitePainel, async (req, res) => {
   if (!chavePainelValida(req)) return res.status(403).json({ erro: 'Chave ausente ou incorreta.' });
   const appId = req.query.appId;
   if (!appId) return res.status(400).json({ erro: 'appId é obrigatório.' });
@@ -722,8 +833,17 @@ app.get('/api/usuario-plays', async (req, res) => {
  * não é usada pelo app nem chamada automaticamente por nada.
  * IRREVERSÍVEL: não existe backup dos plays apagados.
  */
-app.get('/api/zerar-plays', async (req, res) => {
+app.get('/api/zerar-plays', limitePainel, async (req, res) => {
   if (!chavePainelValida(req)) return res.status(403).json({ erro: 'Chave ausente ou incorreta.' });
+  // Acao irreversivel (apaga TODO o historico de plays) -- exige uma
+  // segunda confirmacao explicita na propria URL, alem da chave, pra
+  // nao disparar sozinha por acidente (ex: um crawler/preview de link
+  // seguindo a URL, ou um clique errado num link salvo).
+  if (req.query.confirmar !== 'sim') {
+    return res.status(400).json({
+      erro: 'Acao irreversivel. Confirme adicionando &confirmar=sim na URL.',
+    });
+  }
   try {
     const db = getFirestore();
     let totalApagado = 0;
@@ -738,6 +858,7 @@ app.get('/api/zerar-plays', async (req, res) => {
       totalApagado += snap.size;
     }
     console.log(`/api/zerar-plays: ${totalApagado} plays apagados.`);
+    registrarAlerta('/api/zerar-plays', `${totalApagado} plays apagados (IP ${req.ip}).`);
     return res.json({ ok: true, totalApagado });
   } catch (erro) {
     console.error('Erro em /api/zerar-plays:', erro);
@@ -749,7 +870,7 @@ app.get('/api/zerar-plays', async (req, res) => {
  * Libera um App_ID (muda Status pra "Liberado" na planilha) — ação do
  * botão "Liberar" no painel.
  */
-app.post('/api/liberar', async (req, res) => {
+app.post('/api/liberar', limitePainel, async (req, res) => {
   if (!chavePainelValida(req)) return res.status(403).json({ erro: 'Chave ausente ou incorreta.' });
   const { appId } = req.body || {};
   if (!appId) return res.status(400).json({ erro: 'appId é obrigatório.' });
@@ -777,6 +898,11 @@ app.post('/api/liberar', async (req, res) => {
       valueInputOption: 'RAW',
       requestBody: { values: [['Liberado']] },
     });
+    registrarAlerta('/api/liberar', `appId ${appId} liberado (IP ${req.ip}).`);
+    // Invalida o cache de liberados na hora -- sem isso, esse mesmo
+    // App_ID so passaria a tocar/ver o catalogo depois de ate 30s (TTL
+    // do cache usado por /cache e /midia, ver obterLiberados acima).
+    liberadosCache = { set: null, expiraEm: 0 };
     return res.json({ ok: true });
   } catch (erro) {
     console.error('Erro em /api/liberar:', erro);
@@ -843,7 +969,7 @@ async function agregarEngajamentoPorUsuario() {
  * Engajamento agregado pro painel: plays por dia (14 dias), faixas mais
  * tocadas (14 dias) e usuários ativos hoje.
  */
-app.get('/api/engajamento', async (req, res) => {
+app.get('/api/engajamento', limitePainel, async (req, res) => {
   if (!chavePainelValida(req)) return res.status(403).json({ erro: 'Chave ausente ou incorreta.' });
   try {
     const plays = await buscarPlaysRecentes(14);
@@ -898,7 +1024,7 @@ app.get('/api/engajamento', async (req, res) => {
  * página faz as chamadas de API do lado do navegador, repassando a
  * chave que veio na própria URL.
  */
-app.get('/painel', (req, res) => {
+app.get('/painel', limitePainel, (req, res) => {
   if (!chavePainelValida(req)) {
     return res.status(403).send('Acesso negado — chave ausente ou incorreta. Use /painel?chave=SUACHAVE');
   }

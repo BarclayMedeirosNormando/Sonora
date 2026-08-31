@@ -249,3 +249,62 @@ Por enquanto essa mudança cobre só o ÁUDIO (`Track.streamUrl`). As capas
 (`Album.capaUrl`) continuam vindo direto do Drive — são bem menores que os
 MP3s e menos prováveis de disparar o mesmo gatilho de abuso, mas se um dia
 virar problema, o mesmo padrão de proxy+cache dá pra estender pra elas.
+
+## Reforço de segurança (31/08/2026)
+
+Auditoria encontrou que `/cache` e `/midia/:fileId` respondiam pra
+qualquer um que soubesse a URL, sem checar liberação nenhuma — o gate
+de "App_ID liberado" só existia dentro do app (tela de validação),
+nunca no backend. Corrigido:
+
+- `/cache` e `/midia/:fileId` agora exigem `?appId=X` liberado na
+  planilha (checado com um cache em memória de 30s, pra não bater na
+  planilha a cada play). Resposta `401` sem `appId`, `403` se não
+  liberado.
+- Rate limiting (`express-rate-limit`) em todas as rotas: `/validar`
+  (30/5min por IP), `/gerar-cache` (3/15min) + trava contra execução
+  simultânea, `/cache`+`/midia` (300/5min), `/painel`+`/api/*`
+  (60/5min).
+- `PAINEL_CHAVE` agora também aceita o header `X-Painel-Chave` (usado
+  pelas chamadas de API do `painel.html`) — reduz a chave aparecendo
+  nos logs de acesso do Cloud Run, que registram a URL completa.
+- `/api/zerar-plays` (apaga TODO o histórico de plays, irreversível)
+  agora exige `&confirmar=sim` na URL, além da chave — evita disparo
+  acidental (crawler seguindo um link salvo, etc.).
+- `/api/liberar` grava um alerta de auditoria (`registrarAlerta`) toda
+  vez que libera um App_ID, com o IP de quem chamou.
+- `helmet` adicionado como camada básica de headers HTTP de segurança
+  (CSP desligado, porque `painel.html` usa `<script>` inline).
+
+**IMPORTANTE — ordem de deploy**: depois de publicar essa versão do
+backend, qualquer APK instalado ANTES dela (ex: `2.5.0+20` ou
+anteriores) vai parar de tocar música e carregar a Biblioteca — porque
+esses builds antigos chamam `/midia` e `/cache` sem `?appId=`, e a
+nova checagem responde `401`. Isso não é bug, é o gate funcionando.
+Rebuildar e reinstalar o app (versão `2.5.1+21`, já com o `appId`
+sendo enviado) logo em seguida ao `gcloud run deploy` evita esse
+período sem música.
+
+**Pendente, fora do escopo do código** (é mudança de IAM no bucket, não
+de app): o bucket `sonora-midia-cache` está com `roles/storage.objectViewer`
+pra `allUsers` no nível do BUCKET — isso inclui permissão de LISTAR os
+objetos, não só ler um que você já sabe o nome. Quem listar o bucket
+descobre todos os `fileId` já cacheados sem precisar nunca passar pelo
+`/midia` (e portanto sem nunca passar pelo gate de `appId` acima). Pra
+fechar isso, trocar a permissão de nível de bucket por ACL por objeto
+(sem list, só o objeto individual fica público):
+
+```
+gcloud storage buckets remove-iam-policy-binding gs://sonora-midia-cache \
+  --member=allUsers --role=roles/storage.objectViewer
+
+gsutil defacl set public-read gs://sonora-midia-cache
+```
+
+A segunda linha faz com que todo objeto NOVO gravado pelo proxy já
+suba público de leitura (sem list) automaticamente — os objetos que já
+estão no bucket hoje precisam do ACL aplicado retroativamente:
+
+```
+gsutil -m acl set -R public-read gs://sonora-midia-cache/midia/
+```

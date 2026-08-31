@@ -49,7 +49,12 @@ class Track {
   /// alguém toca ela; todo mundo depois é servido do cache, sem bater no
   /// Drive de novo — evita o gatilho de anti-abuso do Drive quando muita
   /// gente toca a mesma faixa popular ao mesmo tempo.
-  String streamUrl(String cloudRunBaseUrl) => '$cloudRunBaseUrl/midia/$id';
+  /// [appId] vai como query param -- desde o reforco de seguranca, o
+  /// backend passou a exigir que o App_ID esteja liberado antes de
+  /// servir a faixa (antes, qualquer um com a URL conseguia tocar/baixar
+  /// qualquer musica, mesmo sem nunca ter passado pela validacao).
+  String streamUrl(String cloudRunBaseUrl, String appId) =>
+      '$cloudRunBaseUrl/midia/$id?appId=${Uri.encodeQueryComponent(appId)}';
 
   /// Título "limpo" pra exibição: remove a extensão .mp3 e, se existir, a
   /// mesma marca "Proprietário @..." que aparece em vários nomes de pasta
