@@ -48,6 +48,7 @@ const path = require('path');
 const express = require('express');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
+const compression = require('compression');
 const { Firestore } = require('@google-cloud/firestore');
 const { Storage } = require('@google-cloud/storage');
 
@@ -94,6 +95,7 @@ const PAINEL_CHAVE = process.env.PAINEL_CHAVE || '';
 
 app.use(express.json());
 app.use(helmet({ contentSecurityPolicy: false })); // CSP desligado: painel.html tem <script> inline
+app.use(compression()); // gzip/brotli nas respostas -- corta bastante o tamanho do JSON do /cache
 
 // ---- Protecao basica contra abuso (reforco de seguranca) ----
 // Quatro limitadores separados, calibrados pro uso real de cada rota --
@@ -348,6 +350,11 @@ app.get('/cache', limiteMidia, exigirAppIdLiberado, async (req, res) => {
     const texto = await respostaDrive.text();
     res.set('Content-Type', 'application/json; charset=utf-8');
     res.set('Access-Control-Allow-Origin', '*'); // libera CORS pro Flutter Web
+    // Cache HTTP curto (5 min): o app ja tem seu proprio TTL de 1h no
+    // cliente (LibraryCacheService), isso aqui e so pra evitar bater no
+    // Drive de novo a cada revalidacao que cair na mesma janela de 5 min
+    // (ex: varios usuarios abrindo o app quase ao mesmo tempo).
+    res.set('Cache-Control', 'public, max-age=300');
     return res.send(texto);
   } catch (erro) {
     console.error('Erro em /cache:', erro);

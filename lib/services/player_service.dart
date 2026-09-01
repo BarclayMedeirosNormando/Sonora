@@ -41,10 +41,6 @@ class PlayerService extends ChangeNotifier with WidgetsBindingObserver {
   // pra autenticar /midia e /cache no backend (reforco de seguranca:
   // antes, qualquer um com a URL de streaming conseguia tocar qualquer
   // faixa sem nunca ter sido liberado na planilha).
-  String? _appIdCache;
-  Future<String> _obterAppId() async {
-    return _appIdCache ??= await DeviceIdService.getOrCreateDeviceId();
-  }
 
   PlayerService({DownloadService? downloadService})
       : _downloadService = downloadService {
@@ -121,7 +117,7 @@ class PlayerService extends ChangeNotifier with WidgetsBindingObserver {
   /// Começa a tocar uma fila de faixas a partir de um índice (ex: as faixas
   /// da pasta atual, começando na que o usuário tocou).
   Future<void> tocarFila(List<Track> faixas, int indiceInicial) async {
-    final appId = await _obterAppId();
+    final appId = await DeviceIdService.getOrCreateDeviceId();
     _fila
       ..clear()
       ..addAll(faixas);
@@ -296,7 +292,7 @@ class PlayerService extends ChangeNotifier with WidgetsBindingObserver {
       return;
     }
 
-    final appId = await _obterAppId();
+    final appId = await DeviceIdService.getOrCreateDeviceId();
     final posicaoInsercao = _indiceAtual + 1;
     await _playlist!.insert(posicaoInsercao, _fonteDe(track, appId));
     _fila.insert(posicaoInsercao, track);
@@ -364,7 +360,7 @@ class PlayerService extends ChangeNotifier with WidgetsBindingObserver {
       // deixar _fila/_playlist preenchidos com algo que o player não tem
       // de verdade, porque isso pode travar tentativas de tocar algo novo
       // depois.
-      final appId = await _obterAppId();
+      final appId = await DeviceIdService.getOrCreateDeviceId();
       final playlistRestaurada = ConcatenatingAudioSource(
         children: listaFaixas.map((t) => _fonteDe(t, appId)).toList(),
       );

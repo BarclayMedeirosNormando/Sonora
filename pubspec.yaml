@@ -17,7 +17,7 @@ dependencies:
   # Player de áudio
   just_audio: ^0.9.42
   just_audio_background: ^0.0.1-beta.17
-  audio_service: any
+  audio_service: ^0.18.19
 
   # Pede permissão de notificação (Android 13+) — sem ela a notificação
   # do player em segundo plano nunca aparece, mesmo com o foreground
