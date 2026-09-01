@@ -55,7 +55,13 @@ class ApiService {
   /// simultâneas em contas Google normais — sobra só o action=validar
   /// (rápido) passando por lá, reduzindo bastante o risco de esbarrar
   /// nesse limite com muita gente abrindo o app ao mesmo tempo.
-  static Future<Map<String, dynamic>> obterCacheBiblioteca(String appId) async {
+  /// Devolve o JSON BRUTO (texto), sem decodificar -- desde 01/09/2026 a
+  /// decodificação (pesada, biblioteca podendo chegar a 200 mil faixas)
+  /// acontece numa isolate separada dentro do LibraryCacheService, não
+  /// aqui, pra não travar a thread de UI. Quem chama também precisa
+  /// checar o campo "erro" por conta própria depois de decodificar (isso
+  /// também passou a acontecer do lado de quem decodifica).
+  static Future<String> obterCacheBiblioteca(String appId) async {
     return _comRetentativas(() async {
       // Sempre via Cloud Run (mudou em 30/08/2026 — antes, fora da Web,
       // ia direto no Drive com alt=media&key=..., mesmo padrão de URL
@@ -80,12 +86,7 @@ class ApiService {
           'Falha ao carregar o cache da biblioteca (HTTP ${response.statusCode})',
         );
       }
-      final body =
-          jsonDecode(utf8.decode(response.bodyBytes)) as Map<String, dynamic>;
-      if (body['erro'] != null) {
-        throw Exception(body['erro']);
-      }
-      return body;
+      return utf8.decode(response.bodyBytes);
     });
   }
 

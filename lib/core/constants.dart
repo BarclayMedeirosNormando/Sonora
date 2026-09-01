@@ -6,7 +6,7 @@ class AppConstants {
   /// "Sonora" na AppBar da Home. Atualizar junto com o `version:` do
   /// pubspec.yaml a cada novo build (só o nome curto, ex. "2.5.0",
   /// sem o +N de build number).
-  static const String appVersionLabel = '2.5.2';
+  static const String appVersionLabel = '2.5.3';
 
   /// URL do Web App do Apps Script (backend). Desde 29/08/2026 só é
   /// usada pelo endpoint legado action=navegar (não chamado pela

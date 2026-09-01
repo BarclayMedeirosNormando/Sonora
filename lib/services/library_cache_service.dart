@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart' show compute;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/album.dart';
@@ -93,7 +94,7 @@ class LibraryCacheService {
       final jsonSalvo = prefs.getString(_prefsKeyCacheJson);
       if (jsonSalvo != null) {
         // Mostra o que já tinha salvo no aparelho na hora, sem esperar rede.
-        _aplicarBody(jsonDecode(jsonSalvo) as Map<String, dynamic>);
+        await _aplicarBodyBruto(jsonSalvo);
 
         final salvoEmMs = prefs.getInt(_prefsKeyCacheEm);
         final salvoEm = salvoEmMs != null
@@ -119,9 +120,15 @@ class LibraryCacheService {
   static Future<void> _buscarDaRedeEAtualizar(SharedPreferences prefs) async {
     try {
       final appId = await DeviceIdService.getOrCreateDeviceId();
-      final body = await ApiService.obterCacheBiblioteca(appId);
-      _aplicarBody(body);
-      await prefs.setString(_prefsKeyCacheJson, jsonEncode(body));
+      // obterCacheBiblioteca devolve o JSON BRUTO (texto), sem decodificar
+      // -- a decodificacao (pesada, com a biblioteca podendo chegar a 200
+      // mil faixas) acontece toda dentro de _aplicarBodyBruto, numa
+      // isolate separada, pra nao travar a thread de UI. Guardar o texto
+      // bruto direto (em vez de jsonEncode(body) de volta) tambem evita
+      // decodificar e reencodar a mesma coisa duas vezes a toa.
+      final jsonBruto = await ApiService.obterCacheBiblioteca(appId);
+      await _aplicarBodyBruto(jsonBruto);
+      await prefs.setString(_prefsKeyCacheJson, jsonBruto);
       await prefs.setInt(_prefsKeyCacheEm, DateTime.now().millisecondsSinceEpoch);
     } catch (_) {
       // Se já tinha algo carregado (da própria memória ou de um cache
@@ -132,25 +139,21 @@ class LibraryCacheService {
     }
   }
 
-  static void _aplicarBody(Map<String, dynamic> body) {
-    final albunsJson = body['albuns'] as List<dynamic>? ?? [];
-    _albunsEmCache = albunsJson
-        .map((a) => Album.fromJson(a as Map<String, dynamic>))
-        .toList();
-
-    final arvoreJson = body['arvore'] as List<dynamic>? ?? [];
-    final pastas = <Album>[];
-    final faixas = <Track>[];
-    for (final item in arvoreJson) {
-      final mapa = item as Map<String, dynamic>;
-      if (mapa['tipo'] == 'pasta') {
-        pastas.add(Album.fromJson(mapa));
-      } else if (mapa['tipo'] == 'faixa') {
-        faixas.add(Track.fromJson(mapa));
-      }
-    }
-    _arvorePastasEmCache = pastas;
-    _arvoreFaixasEmCache = faixas;
+  /// Decodifica o JSON bruto do cache da biblioteca e monta as listas de
+  /// álbuns/pastas/faixas, tudo rodando numa isolate separada via
+  /// compute() (01/09/2026) -- antes, o jsonDecode + a montagem dos
+  /// modelos rodavam direto na thread de UI. Com a biblioteca pequena
+  /// (poucas mil faixas) isso era rápido demais pra notar, mas a meta é
+  /// escalar pra ~200 mil faixas (ver sonora_deploy.md), e nesse tamanho
+  /// um JSON de dezenas de MB decodificado na UI congelaria o app por um
+  /// bom tempo -- bem no momento mais sensível, a abertura do app
+  /// mostrando o cache salvo. compute() joga esse trabalho pesado numa
+  /// isolate à parte, sem travar nenhum frame.
+  static Future<void> _aplicarBodyBruto(String jsonBruto) async {
+    final resultado = await compute(_decodificarBibliotecaEmIsolate, jsonBruto);
+    _albunsEmCache = resultado.albuns;
+    _arvorePastasEmCache = resultado.pastas;
+    _arvoreFaixasEmCache = resultado.faixas;
   }
 
   /// Álbuns já em cache em memória, sem disparar rede — null se ainda não
@@ -197,4 +200,49 @@ class LibraryCacheService {
     }
     return partsA.length.compareTo(partsB.length);
   }
+}
+
+
+/// Resultado de [_decodificarBibliotecaEmIsolate] -- os três já vêm
+/// prontos pra virar os caches em memória do LibraryCacheService.
+class _ResultadoParseBiblioteca {
+  final List<Album> albuns;
+  final List<Album> pastas;
+  final List<Track> faixas;
+
+  _ResultadoParseBiblioteca(this.albuns, this.pastas, this.faixas);
+}
+
+/// Função de nível superior (exigência do compute() -- não pode ser
+/// método de instância nem closure) que decodifica o JSON bruto do cache
+/// da biblioteca e monta os modelos. Roda inteira numa isolate separada,
+/// longe da thread de UI (ver comentário em _aplicarBodyBruto).
+_ResultadoParseBiblioteca _decodificarBibliotecaEmIsolate(String jsonBruto) {
+  final body = jsonDecode(jsonBruto) as Map<String, dynamic>;
+
+  // ApiService.obterCacheBiblioteca não decodifica mais (ver comentário
+  // lá) -- então essa checagem de erro, que antes rodava logo depois do
+  // jsonDecode em api_service.dart, precisou vir pra cá.
+  if (body['erro'] != null) {
+    throw Exception(body['erro']);
+  }
+
+  final albunsJson = body['albuns'] as List<dynamic>? ?? [];
+  final albuns = albunsJson
+      .map((a) => Album.fromJson(a as Map<String, dynamic>))
+      .toList();
+
+  final arvoreJson = body['arvore'] as List<dynamic>? ?? [];
+  final pastas = <Album>[];
+  final faixas = <Track>[];
+  for (final item in arvoreJson) {
+    final mapa = item as Map<String, dynamic>;
+    if (mapa['tipo'] == 'pasta') {
+      pastas.add(Album.fromJson(mapa));
+    } else if (mapa['tipo'] == 'faixa') {
+      faixas.add(Track.fromJson(mapa));
+    }
+  }
+
+  return _ResultadoParseBiblioteca(albuns, pastas, faixas);
 }
