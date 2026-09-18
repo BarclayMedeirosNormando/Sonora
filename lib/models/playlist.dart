@@ -26,6 +26,29 @@ class PlaylistFaixa {
       capaId: json['capaId'] as String?,
     );
   }
+
+  /// Nome "limpo" pra exibição — mesmo tratamento de Track.displayTitle:
+  /// remove a extensão .mp3 e a marca "Proprietário @..." que aparece em
+  /// vários nomes de arquivo de origem.
+  String get displayNome {
+    var t = nome;
+    if (t.toLowerCase().endsWith('.mp3')) {
+      t = t.substring(0, t.length - 4);
+    }
+    final idx = t.toLowerCase().indexOf('proprietário');
+    if (idx >= 0) {
+      t = t.substring(0, idx);
+    }
+    t = t.replaceAll('🎵', ' ').replaceAll(RegExp(r'\s+'), ' ').trim();
+    return t.isEmpty ? nome : t;
+  }
+
+  /// URL da capa do álbum de origem (herdada na hora em que a faixa foi
+  /// adicionada à playlist na curadoria), ou null se não tiver.
+  String? capaUrl(String apiKey) {
+    if (capaId == null) return null;
+    return 'https://www.googleapis.com/drive/v3/files/$capaId?alt=media&key=$apiKey';
+  }
 }
 
 /// Resumo de uma playlist, como devolvido por GET /api/playlists — o

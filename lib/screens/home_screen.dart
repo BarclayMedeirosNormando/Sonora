@@ -4,19 +4,18 @@ import 'package:provider/provider.dart';
 
 import '../core/constants.dart';
 import '../core/theme.dart';
-import '../models/album.dart';
-import '../services/favoritos_service.dart';
-import '../services/historico_service.dart';
-import '../services/library_cache_service.dart';
+import '../models/playlist.dart';
+import '../services/api_service.dart';
+import '../services/device_id_service.dart';
 import '../services/player_service.dart';
-import '../widgets/album_skeleton.dart';
-import 'folder_screen.dart';
 import 'pedido_screen.dart';
 import 'player_screen.dart';
+import 'playlist_screen.dart';
 
-/// Tela inicial do app: continuar ouvindo, adicionados recentemente e
-/// favoritos, tudo num só lugar — em vez de cair direto na lista crua de
-/// pastas da biblioteca (que continua acessível pelo botão "Ver tudo").
+/// Tela inicial do app: lista as playlists curadas direcionadas a este
+/// App_ID (ver GET /api/playlists no backend) -- a navegação livre pelas
+/// pastas cruas do Drive saiu daqui; o usuário só vê o que foi
+/// selecionado especificamente pra ele na curadoria (17/09/2026).
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
@@ -25,19 +24,24 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  late Future<List<Album>> _recentesFuture;
+  late Future<List<PlaylistResumo>> _playlistsFuture;
 
   @override
   void initState() {
     super.initState();
-    _recentesFuture = LibraryCacheService.obterAlbuns();
+    _playlistsFuture = _carregarPlaylists();
+  }
+
+  Future<List<PlaylistResumo>> _carregarPlaylists() async {
+    final appId = await DeviceIdService.getOrCreateDeviceId();
+    return ApiService.obterPlaylists(appId);
   }
 
   Future<void> _recarregar() async {
     setState(() {
-      _recentesFuture = LibraryCacheService.obterAlbuns(forcarRecarga: true);
+      _playlistsFuture = _carregarPlaylists();
     });
-    await _recentesFuture;
+    await _playlistsFuture;
   }
 
   @override
@@ -69,11 +73,7 @@ class _HomeScreenState extends State<HomeScreen> {
           padding: const EdgeInsets.only(bottom: 16),
           children: [
             const _ContinuarOuvindo(),
-            _SecaoAlbuns(
-              titulo: 'Adicionados recentemente',
-              future: _recentesFuture,
-            ),
-            const _SecaoFavoritos(),
+            _SecaoPlaylists(future: _playlistsFuture),
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
               child: OutlinedButton.icon(
@@ -184,44 +184,59 @@ class _ContinuarOuvindo extends StatelessWidget {
   }
 }
 
-class _SecaoAlbuns extends StatelessWidget {
-  final String titulo;
-  final Future<List<Album>> future;
-  static const _maxItens = 12;
+/// Lista as playlists curadas pra este App_ID -- cards grandes,
+/// verticais (diferente da fileira horizontal de álbuns que existia
+/// antes), já que agora são o conteúdo principal da Home, não uma seção
+/// secundária.
+class _SecaoPlaylists extends StatelessWidget {
+  final Future<List<PlaylistResumo>> future;
 
-  const _SecaoAlbuns({required this.titulo, required this.future});
+  const _SecaoPlaylists({required this.future});
 
   @override
   Widget build(BuildContext context) {
-    return FutureBuilder<List<Album>>(
+    return FutureBuilder<List<PlaylistResumo>>(
       future: future,
       builder: (context, snapshot) {
-        final albuns = (snapshot.data ?? []).take(_maxItens).toList();
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _TituloSecao(titulo),
-              const AlbumRowSkeleton(quantidade: 5),
-            ],
+          return const Padding(
+            padding: EdgeInsets.fromLTRB(16, 40, 16, 0),
+            child: Center(child: CircularProgressIndicator(color: AppTheme.accent)),
           );
         }
 
-        if (albuns.isEmpty) return const SizedBox.shrink();
+        if (snapshot.hasError) {
+          return const Padding(
+            padding: EdgeInsets.fromLTRB(24, 40, 24, 0),
+            child: Center(
+              child: Text(
+                'Não foi possível carregar suas playlists.\nPuxe pra baixo pra tentar de novo.',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: AppTheme.textSecondary),
+              ),
+            ),
+          );
+        }
+
+        final playlists = snapshot.data ?? [];
+        if (playlists.isEmpty) {
+          return const Padding(
+            padding: EdgeInsets.fromLTRB(24, 40, 24, 0),
+            child: Center(
+              child: Text(
+                'Nenhuma playlist ainda.\nPeça pra liberarem uma playlist pra você.',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: AppTheme.textSecondary),
+              ),
+            ),
+          );
+        }
 
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _TituloSecao(titulo),
-            SizedBox(
-              height: 168,
-              child: ListView.builder(
-                scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                itemCount: albuns.length,
-                itemBuilder: (context, index) => _AlbumCardPequeno(album: albuns[index]),
-              ),
-            ),
+            const _TituloSecao('Suas playlists'),
+            ...playlists.map((p) => _PlaylistCard(playlist: p)),
           ],
         );
       },
@@ -229,100 +244,75 @@ class _SecaoAlbuns extends StatelessWidget {
   }
 }
 
-class _SecaoFavoritos extends StatelessWidget {
-  const _SecaoFavoritos();
+class _PlaylistCard extends StatelessWidget {
+  final PlaylistResumo playlist;
+
+  const _PlaylistCard({required this.playlist});
 
   @override
   Widget build(BuildContext context) {
-    final favoritos = context.watch<FavoritosService>().favoritos;
-    if (favoritos.isEmpty) return const SizedBox.shrink();
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const _TituloSecao('Favoritos'),
-        SizedBox(
-          height: 48,
-          child: ListView.builder(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            itemCount: favoritos.length,
-            itemBuilder: (context, index) {
-              final item = favoritos[index];
-              return Padding(
-                padding: const EdgeInsets.only(right: 8),
-                child: ActionChip(
-                  backgroundColor: AppTheme.surface,
-                  label: Text(
-                    item.name,
-                    style: const TextStyle(color: AppTheme.textPrimary),
-                  ),
-                  onPressed: () {
-                    context.read<HistoricoService>().registrarPasta(item.id, item.name);
-                    Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (_) => FolderScreen(folderId: item.id, title: item.name),
-                      ),
-                    );
-                  },
-                ),
-              );
-            },
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _AlbumCardPequeno extends StatelessWidget {
-  final Album album;
-
-  const _AlbumCardPequeno({required this.album});
-
-  @override
-  Widget build(BuildContext context) {
-    final capaUrl = album.capaUrl(AppConstants.driveApiKey);
+    final capaUrl = playlist.capaUrl(AppConstants.driveApiKey);
 
     return Padding(
-      padding: const EdgeInsets.only(right: 12),
-      child: SizedBox(
-        width: 110,
-        child: InkWell(
-          borderRadius: BorderRadius.circular(8),
-          onTap: () {
-            context.read<HistoricoService>().registrarPasta(album.id, album.displayName);
-            Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (_) => FolderScreen(folderId: album.id, title: album.displayName),
-              ),
-            );
-          },
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(10),
+        onTap: () {
+          Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (_) =>
+                  PlaylistScreen(playlistId: playlist.id, nome: playlist.nome),
+            ),
+          );
+        },
+        child: Container(
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            color: AppTheme.surface,
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Row(
             children: [
-              AspectRatio(
-                aspectRatio: 1,
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(8),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: SizedBox(
+                  width: 56,
+                  height: 56,
                   child: capaUrl != null
                       ? CachedNetworkImage(
                           imageUrl: capaUrl,
                           fit: BoxFit.cover,
-                          memCacheWidth: 220,
-                          placeholder: (context, url) => const _CapaPequenaPlaceholder(),
-                          errorWidget: (context, url, error) => const _CapaPequenaPlaceholder(),
+                          memCacheWidth: 160,
+                          placeholder: (context, url) => const _CapaPlaylistPlaceholder(),
+                          errorWidget: (context, url, error) =>
+                              const _CapaPlaylistPlaceholder(),
                         )
-                      : const _CapaPequenaPlaceholder(),
+                      : const _CapaPlaylistPlaceholder(),
                 ),
               ),
-              const SizedBox(height: 6),
-              Text(
-                album.displayName,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(color: AppTheme.textPrimary, fontSize: 12),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      playlist.nome,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: AppTheme.textPrimary,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      '${playlist.totalFaixas} faixa${playlist.totalFaixas == 1 ? '' : 's'}',
+                      style: const TextStyle(color: AppTheme.textSecondary, fontSize: 12),
+                    ),
+                  ],
+                ),
               ),
+              const Icon(Icons.chevron_right, color: AppTheme.textSecondary),
             ],
           ),
         ),
@@ -331,15 +321,15 @@ class _AlbumCardPequeno extends StatelessWidget {
   }
 }
 
-class _CapaPequenaPlaceholder extends StatelessWidget {
-  const _CapaPequenaPlaceholder();
+class _CapaPlaylistPlaceholder extends StatelessWidget {
+  const _CapaPlaylistPlaceholder();
 
   @override
   Widget build(BuildContext context) {
     return Container(
       color: AppTheme.surfaceHigh,
       child: const Center(
-        child: Icon(Icons.folder, color: AppTheme.accent, size: 24),
+        child: Icon(Icons.queue_music, color: AppTheme.accent, size: 24),
       ),
     );
   }
