@@ -1,0 +1,524 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Sonora — Curadoria</title>
+<style>
+  :root {
+    color-scheme: light;
+    --surface-1:      #fcfcfb;
+    --page:           #f9f9f7;
+    --text-primary:   #0b0b0b;
+    --text-secondary: #52514e;
+    --text-muted:     #898781;
+    --grid:           #e1e0d9;
+    --border:         rgba(11,11,11,0.10);
+    --series-1:       #2a78d6;
+    --series-1-wash:  rgba(42,120,214,0.10);
+    --status-warning: #fab219;
+    --status-good:    #0ca30c;
+    --status-critical:#d03b3b;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:where(:not([data-theme="light"])) {
+      color-scheme: dark;
+      --surface-1:      #1a1a19;
+      --page:           #0d0d0d;
+      --text-primary:   #ffffff;
+      --text-secondary: #c3c2b7;
+      --text-muted:     #898781;
+      --grid:           #2c2c2a;
+      --border:         rgba(255,255,255,0.10);
+      --series-1:       #3987e5;
+      --series-1-wash:  rgba(57,135,229,0.14);
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --surface-1:      #1a1a19;
+    --page:           #0d0d0d;
+    --text-primary:   #ffffff;
+    --text-secondary: #c3c2b7;
+    --text-muted:     #898781;
+    --grid:           #2c2c2a;
+    --border:         rgba(255,255,255,0.10);
+    --series-1:       #3987e5;
+    --series-1-wash:  rgba(57,135,229,0.14);
+  }
+
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--page); color: var(--text-primary);
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif; -webkit-font-smoothing: antialiased; }
+  .wrap { max-width: 1200px; margin: 0 auto; padding: 28px 20px 64px; }
+
+  .banner { border-radius: 10px; padding: 10px 16px; font-size: 13px; margin-bottom: 24px; border: 1px solid var(--border); }
+  .banner.error { background: rgba(208,59,59,0.10); color: var(--status-critical); }
+  .banner.ok { background: rgba(12,163,12,0.10); color: var(--status-good); }
+
+  header.top { margin-bottom: 20px; display:flex; align-items:baseline; justify-content:space-between; gap:12px; flex-wrap:wrap; }
+  header.top h1 { font-size: 22px; font-weight: 650; margin: 0 0 4px; }
+  header.top p { margin: 0; color: var(--text-secondary); font-size: 14px; }
+
+  .tabs { display: flex; gap: 4px; margin-bottom: 22px; border-bottom: 1px solid var(--border); overflow-x: auto; }
+  .tab-btn { background: none; border: none; padding: 10px 16px; font-size: 13px; font-weight: 550;
+    color: var(--text-muted); cursor: pointer; border-bottom: 2px solid transparent; white-space: nowrap; font-family: inherit; }
+  .tab-btn:hover { color: var(--text-primary); }
+  .tab-btn.active { color: var(--text-primary); border-bottom-color: var(--series-1); }
+  .tab-panel[hidden] { display: none; }
+
+  .card { background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px; padding: 16px 18px; }
+  .card h3 { font-size: 14px; font-weight: 650; margin: 0 0 10px; }
+  .sub { font-size: 12px; color: var(--text-muted); margin: 0 0 12px; }
+
+  .grid-curadoria { display: grid; grid-template-columns: 1.2fr 1fr; gap: 16px; align-items: start; }
+  @media (max-width: 860px) { .grid-curadoria { grid-template-columns: 1fr; } }
+
+  input[type="text"] { width: 100%; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border);
+    background: var(--page); color: var(--text-primary); font-size: 13.5px; font-family: inherit; }
+  input[type="text"]:focus { outline: 2px solid var(--series-1); outline-offset: -1px; }
+
+  .btn { font-size: 12.5px; font-weight: 550; background: var(--series-1); color: white; border: none;
+    border-radius: 7px; padding: 6px 12px; cursor: pointer; white-space: nowrap; }
+  .btn:hover { opacity: 0.88; } .btn:disabled { opacity: 0.5; cursor: default; }
+  .btn.secondary { background: var(--page); color: var(--text-primary); border: 1px solid var(--border); }
+  .btn.danger { background: rgba(208,59,59,0.12); color: var(--status-critical); }
+  .btn.small { padding: 3px 9px; font-size: 11.5px; }
+
+  .row-inline { display: flex; gap: 8px; align-items: center; }
+  .empty-note { font-size: 12.5px; color: var(--text-muted); padding: 14px 0; text-align: center; }
+
+  .album-list, .track-list, .playlist-tracks { display: flex; flex-direction: column; gap: 2px; margin-top: 10px; max-height: 420px; overflow-y: auto; }
+  .album-item { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 8px 6px;
+    border-radius: 6px; cursor: pointer; font-size: 13px; }
+  .album-item:hover { background: var(--series-1-wash); }
+  .album-item.aberto { background: var(--series-1-wash); font-weight: 600; }
+  .album-item .meta { color: var(--text-muted); font-size: 11.5px; }
+
+  .track-item { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 7px 6px;
+    border-bottom: 1px solid var(--grid); font-size: 12.5px; }
+  .track-item:last-child { border-bottom: none; }
+  .track-item .nome { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  .playlist-header { display: flex; gap: 8px; align-items: center; margin-bottom: 10px; flex-wrap: wrap; }
+  .playlist-header select { flex: 1; min-width: 140px; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border);
+    background: var(--page); color: var(--text-primary); font-size: 13px; font-family: inherit; }
+
+  .pt-item { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 7px 6px;
+    border-bottom: 1px solid var(--grid); font-size: 12.5px; }
+  .pt-item:last-child { border-bottom: none; }
+  .pt-item .nome { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pt-item .album { color: var(--text-muted); font-size: 11px; }
+  .pt-actions { display: flex; gap: 2px; }
+  .icon-btn { background: none; border: none; cursor: pointer; color: var(--text-muted); font-size: 13px; padding: 3px 5px; border-radius: 5px; }
+  .icon-btn:hover { color: var(--text-primary); background: var(--grid); }
+
+  .tag { display:inline-flex; align-items:center; font-size: 11px; font-weight: 550; padding: 2px 8px; border-radius: 999px;
+    background: rgba(250,178,25,0.14); color: var(--status-warning); border: 1px solid rgba(250,178,25,0.35); }
+
+  .novidade-card { display: flex; justify-content: space-between; align-items: center; gap: 12px;
+    padding: 12px 14px; border-radius: 10px; border: 1px solid var(--border); background: var(--surface-1); margin-bottom: 8px; }
+  .novidade-card .nome { font-weight: 600; font-size: 13.5px; }
+  .novidade-card .quando { font-size: 11.5px; color: var(--text-muted); }
+  .novidade-actions { display: flex; gap: 6px; flex-shrink: 0; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div id="banner-slot"></div>
+
+  <header class="top">
+    <div>
+      <h1>Sonora — Curadoria</h1>
+      <p id="subtitle">Carregando...</p>
+    </div>
+  </header>
+
+  <div class="tabs" role="tablist">
+    <button class="tab-btn active" data-tab="curadoria" type="button">Curadoria</button>
+    <button class="tab-btn" data-tab="novidades" type="button">Novidades <span id="novidades-badge"></span></button>
+  </div>
+
+  <div class="tab-panel" data-tab-panel="curadoria">
+    <div class="grid-curadoria">
+      <div class="card">
+        <h3>Biblioteca</h3>
+        <p class="sub">Busque um álbum, escolha as faixas e mande pra playlist selecionada ao lado</p>
+        <input type="text" id="busca-input" placeholder="Buscar álbum..." />
+        <div class="album-list" id="album-list"></div>
+        <div id="track-panel"></div>
+      </div>
+
+      <div class="card">
+        <h3>Playlist em edição</h3>
+        <div class="playlist-header">
+          <select id="playlist-select"></select>
+          <button class="btn secondary small" id="btn-renomear">Renomear</button>
+          <button class="btn danger small" id="btn-apagar">Apagar</button>
+        </div>
+        <div class="row-inline" style="margin-bottom:12px;">
+          <input type="text" id="nova-playlist-input" placeholder="Nome da nova playlist..." />
+          <button class="btn small" id="btn-nova-playlist">Criar</button>
+        </div>
+        <p class="sub" id="playlist-sub"></p>
+        <div class="playlist-tracks" id="playlist-tracks"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="tab-panel" data-tab-panel="novidades" hidden>
+    <div class="card">
+      <h3>Álbuns ainda não revisados</h3>
+      <p class="sub">Novos desde a última vez que você passou por aqui — inclua numa playlist ou ignore</p>
+      <div id="novidades-lista"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  const params = new URLSearchParams(location.search);
+  const CHAVE = params.get('chave') || '';
+  const fmt = (n) => Number(n || 0).toLocaleString('pt-BR');
+
+  async function apiGet(path) {
+    const r = await fetch(path, { headers: { 'X-Painel-Chave': CHAVE } });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(data.erro || ('HTTP ' + r.status));
+    return data;
+  }
+  async function apiSend(method, path, body) {
+    const r = await fetch(path, {
+      method,
+      headers: { 'Content-Type': 'application/json', 'X-Painel-Chave': CHAVE },
+      body: body != null ? JSON.stringify(body) : undefined,
+    });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(data.erro || ('HTTP ' + r.status));
+    return data;
+  }
+
+  function showBanner(kind, texto) {
+    document.getElementById('banner-slot').innerHTML = `<div class="banner ${kind}">${texto}</div>`;
+  }
+  function clearBanner() { document.getElementById('banner-slot').innerHTML = ''; }
+
+  function normalizar(txt) {
+    return String(txt || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  }
+
+  // ---------- Estado ----------
+  let cache = { albuns: [], arvore: [] };
+  let playlists = [];
+  let playlistAtualId = null;
+  let albumAberto = null; // id do álbum expandido na biblioteca
+
+  // ---------- Abas ----------
+  function ativarAba(nome) {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === nome));
+    document.querySelectorAll('.tab-panel').forEach(p => { p.hidden = p.dataset.tabPanel !== nome; });
+  }
+  document.querySelectorAll('.tab-btn').forEach(btn => {
+    btn.addEventListener('click', () => ativarAba(btn.dataset.tab));
+  });
+
+  // ---------- Biblioteca (esquerda) ----------
+  function renderAlbuns(lista) {
+    const el = document.getElementById('album-list');
+    if (!lista.length) {
+      el.innerHTML = '<div class="empty-note">Nenhum álbum encontrado.</div>';
+      return;
+    }
+    el.innerHTML = '';
+    lista.slice(0, 60).forEach((album) => {
+      const div = document.createElement('div');
+      div.className = 'album-item' + (albumAberto === album.id ? ' aberto' : '');
+      div.innerHTML = `<span>${album.name || '(sem nome)'}</span><span class="meta">${album.criadoEm ? new Date(album.criadoEm).toLocaleDateString('pt-BR') : ''}</span>`;
+      div.addEventListener('click', () => abrirAlbum(album));
+      el.appendChild(div);
+    });
+  }
+
+  function buscarAlbuns() {
+    const termo = normalizar(document.getElementById('busca-input').value.trim());
+    const lista = !termo
+      ? cache.albuns
+      : cache.albuns.filter((a) => normalizar(a.name).includes(termo));
+    renderAlbuns(lista);
+  }
+  document.getElementById('busca-input').addEventListener('input', buscarAlbuns);
+
+  function abrirAlbum(album) {
+    albumAberto = album.id;
+    buscarAlbuns();
+    const faixas = cache.arvore.filter((n) => n.tipo === 'faixa' && n.paiId === album.id);
+    const panel = document.getElementById('track-panel');
+    if (!faixas.length) {
+      panel.innerHTML = '<div class="empty-note">Esse álbum não tem faixas no cache.</div>';
+      return;
+    }
+    const header = document.createElement('div');
+    header.className = 'row-inline';
+    header.style.margin = '12px 0 6px';
+    header.innerHTML = `
+      <button class="btn small" id="btn-add-album">+ Álbum inteiro (${faixas.length})</button>
+      <button class="btn secondary small" id="btn-marcar-revisado">Marcar como revisado</button>
+    `;
+    const lista = document.createElement('div');
+    lista.className = 'track-list';
+    faixas.forEach((faixa) => {
+      const item = document.createElement('div');
+      item.className = 'track-item';
+      item.innerHTML = `<span class="nome">${faixa.name}</span><button class="btn small">+</button>`;
+      item.querySelector('button').addEventListener('click', () => adicionarFaixa(faixa, album));
+      lista.appendChild(item);
+    });
+    panel.innerHTML = '';
+    panel.appendChild(header);
+    panel.appendChild(lista);
+
+    document.getElementById('btn-add-album').addEventListener('click', async () => {
+      if (!playlistAtualId) return showBanner('error', 'Escolha ou crie uma playlist primeiro.');
+      const btn = document.getElementById('btn-add-album');
+      btn.disabled = true; btn.textContent = 'Adicionando...';
+      try {
+        for (const faixa of faixas) {
+          await apiSend('POST', `/api/admin/playlists/${playlistAtualId}/faixas`, {
+            fileId: faixa.id, nome: faixa.name, albumId: album.id, albumNome: album.name, capaId: album.capaId,
+          });
+        }
+        await marcarVisto(album.id, 'incluido');
+        await Promise.all([carregarPlaylistAtual(), carregarNovidades()]);
+        clearBanner();
+      } catch (err) {
+        showBanner('error', 'Falha ao adicionar álbum: ' + err.message);
+      } finally {
+        btn.disabled = false; btn.textContent = `+ Álbum inteiro (${faixas.length})`;
+      }
+    });
+
+    document.getElementById('btn-marcar-revisado').addEventListener('click', async () => {
+      await marcarVisto(album.id, 'ignorado');
+      await carregarNovidades();
+      showBanner('ok', `"${album.name}" marcado como revisado.`);
+    });
+  }
+
+  async function adicionarFaixa(faixa, album) {
+    if (!playlistAtualId) return showBanner('error', 'Escolha ou crie uma playlist primeiro.');
+    try {
+      await apiSend('POST', `/api/admin/playlists/${playlistAtualId}/faixas`, {
+        fileId: faixa.id, nome: faixa.name, albumId: album.id, albumNome: album.name, capaId: album.capaId,
+      });
+      clearBanner();
+      await carregarPlaylistAtual();
+    } catch (err) {
+      showBanner('error', 'Falha ao adicionar faixa: ' + err.message);
+    }
+  }
+
+  async function marcarVisto(albumId, status) {
+    try {
+      await apiSend('POST', '/api/admin/vistos', { albumId, status });
+    } catch (err) {
+      console.error('Falha ao marcar visto:', err);
+    }
+  }
+
+  // ---------- Playlist em edição (direita) ----------
+  function renderPlaylistSelect() {
+    const sel = document.getElementById('playlist-select');
+    sel.innerHTML = '';
+    if (!playlists.length) {
+      sel.innerHTML = '<option value="">Nenhuma playlist ainda</option>';
+      playlistAtualId = null;
+      return;
+    }
+    playlists.forEach((p) => {
+      const opt = document.createElement('option');
+      opt.value = p.id; opt.textContent = p.nome;
+      sel.appendChild(opt);
+    });
+    if (!playlistAtualId || !playlists.some((p) => p.id === playlistAtualId)) {
+      playlistAtualId = playlists[0].id;
+    }
+    sel.value = playlistAtualId;
+  }
+  document.getElementById('playlist-select').addEventListener('change', (e) => {
+    playlistAtualId = e.target.value;
+    carregarPlaylistAtual();
+  });
+
+  function renderPlaylistTracks() {
+    const playlist = playlists.find((p) => p.id === playlistAtualId);
+    const container = document.getElementById('playlist-tracks');
+    const sub = document.getElementById('playlist-sub');
+    if (!playlist) {
+      container.innerHTML = '';
+      sub.textContent = '';
+      return;
+    }
+    sub.textContent = `${playlist.faixas.length} faixa(s)`;
+    if (!playlist.faixas.length) {
+      container.innerHTML = '<div class="empty-note">Ainda sem faixas. Adicione pela biblioteca à esquerda.</div>';
+      return;
+    }
+    container.innerHTML = '';
+    playlist.faixas.forEach((faixa, i) => {
+      const item = document.createElement('div');
+      item.className = 'pt-item';
+      item.innerHTML = `
+        <span class="nome">${faixa.nome}${faixa.albumNome ? `<span class="album"> — ${faixa.albumNome}</span>` : ''}</span>
+        <span class="pt-actions">
+          <button class="icon-btn" data-acao="up" ${i === 0 ? 'disabled' : ''}>↑</button>
+          <button class="icon-btn" data-acao="down" ${i === playlist.faixas.length - 1 ? 'disabled' : ''}>↓</button>
+          <button class="icon-btn" data-acao="remover">✕</button>
+        </span>
+      `;
+      item.querySelector('[data-acao="remover"]').addEventListener('click', () => removerFaixa(faixa.fileId));
+      item.querySelector('[data-acao="up"]').addEventListener('click', () => moverFaixa(i, -1));
+      item.querySelector('[data-acao="down"]').addEventListener('click', () => moverFaixa(i, 1));
+      container.appendChild(item);
+    });
+  }
+
+  async function carregarPlaylistAtual() {
+    try {
+      const lista = await apiGet('/api/admin/playlists');
+      playlists = lista.playlists || [];
+      renderPlaylistSelect();
+      renderPlaylistTracks();
+    } catch (err) {
+      showBanner('error', 'Falha ao carregar playlists: ' + err.message);
+    }
+  }
+
+  async function removerFaixa(fileId) {
+    try {
+      await apiSend('DELETE', `/api/admin/playlists/${playlistAtualId}/faixas/${encodeURIComponent(fileId)}`);
+      await carregarPlaylistAtual();
+    } catch (err) {
+      showBanner('error', 'Falha ao remover faixa: ' + err.message);
+    }
+  }
+
+  async function moverFaixa(indice, direcao) {
+    const playlist = playlists.find((p) => p.id === playlistAtualId);
+    if (!playlist) return;
+    const ordem = playlist.faixas.map((f) => f.fileId);
+    const novoIndice = indice + direcao;
+    if (novoIndice < 0 || novoIndice >= ordem.length) return;
+    [ordem[indice], ordem[novoIndice]] = [ordem[novoIndice], ordem[indice]];
+    try {
+      await apiSend('PUT', `/api/admin/playlists/${playlistAtualId}/reordenar`, { ordem });
+      await carregarPlaylistAtual();
+    } catch (err) {
+      showBanner('error', 'Falha ao reordenar: ' + err.message);
+    }
+  }
+
+  document.getElementById('btn-nova-playlist').addEventListener('click', async () => {
+    const input = document.getElementById('nova-playlist-input');
+    const nome = input.value.trim();
+    if (!nome) return;
+    try {
+      const resp = await apiSend('POST', '/api/admin/playlists', { nome });
+      input.value = '';
+      playlistAtualId = resp.id;
+      await carregarPlaylistAtual();
+    } catch (err) {
+      showBanner('error', 'Falha ao criar playlist: ' + err.message);
+    }
+  });
+
+  document.getElementById('btn-renomear').addEventListener('click', async () => {
+    if (!playlistAtualId) return;
+    const playlist = playlists.find((p) => p.id === playlistAtualId);
+    const novoNome = prompt('Novo nome da playlist:', playlist ? playlist.nome : '');
+    if (!novoNome || !novoNome.trim()) return;
+    try {
+      await apiSend('PUT', `/api/admin/playlists/${playlistAtualId}`, { nome: novoNome.trim() });
+      await carregarPlaylistAtual();
+    } catch (err) {
+      showBanner('error', 'Falha ao renomear: ' + err.message);
+    }
+  });
+
+  document.getElementById('btn-apagar').addEventListener('click', async () => {
+    if (!playlistAtualId) return;
+    const playlist = playlists.find((p) => p.id === playlistAtualId);
+    if (!confirm(`Apagar a playlist "${playlist ? playlist.nome : ''}"? Essa ação não pode ser desfeita.`)) return;
+    try {
+      await apiSend('DELETE', `/api/admin/playlists/${playlistAtualId}`);
+      playlistAtualId = null;
+      await carregarPlaylistAtual();
+    } catch (err) {
+      showBanner('error', 'Falha ao apagar: ' + err.message);
+    }
+  });
+
+  // ---------- Novidades ----------
+  async function carregarNovidades() {
+    try {
+      const resp = await apiGet('/api/admin/novidades');
+      const novidades = resp.novidades || [];
+      const badge = document.getElementById('novidades-badge');
+      badge.innerHTML = novidades.length ? `<span class="tag">${novidades.length}</span>` : '';
+
+      const lista = document.getElementById('novidades-lista');
+      if (!novidades.length) {
+        lista.innerHTML = '<div class="empty-note">Nada novo por enquanto — tudo revisado.</div>';
+        return;
+      }
+      lista.innerHTML = '';
+      novidades.forEach((album) => {
+        const card = document.createElement('div');
+        card.className = 'novidade-card';
+        card.innerHTML = `
+          <span>
+            <div class="nome">${album.name || '(sem nome)'}</div>
+            <div class="quando">${album.criadoEm ? new Date(album.criadoEm).toLocaleDateString('pt-BR') : ''}</div>
+          </span>
+          <span class="novidade-actions">
+            <button class="btn small" data-acao="revisar">Revisar</button>
+            <button class="btn secondary small" data-acao="ignorar">Ignorar</button>
+          </span>
+        `;
+        card.querySelector('[data-acao="revisar"]').addEventListener('click', () => {
+          ativarAba('curadoria');
+          document.getElementById('busca-input').value = album.name || '';
+          buscarAlbuns();
+          abrirAlbum(album);
+        });
+        card.querySelector('[data-acao="ignorar"]').addEventListener('click', async () => {
+          await marcarVisto(album.id, 'ignorado');
+          await carregarNovidades();
+        });
+        lista.appendChild(card);
+      });
+    } catch (err) {
+      showBanner('error', 'Falha ao carregar novidades: ' + err.message);
+    }
+  }
+
+  // ---------- Carga inicial ----------
+  async function iniciar() {
+    try {
+      const [cacheResp] = await Promise.all([
+        apiGet('/api/admin/cache'),
+        carregarPlaylistAtual(),
+        carregarNovidades(),
+      ]);
+      cache = cacheResp;
+      document.getElementById('subtitle').textContent =
+        `${fmt((cache.albuns || []).length)} álbuns no catálogo`;
+      buscarAlbuns();
+    } catch (err) {
+      showBanner('error', 'Falha ao carregar a curadoria: ' + err.message + '. Confira se a URL tem <code>?chave=SUACHAVE</code> correta.');
+    }
+  }
+  iniciar();
+})();
+</script>
+</body>
+</html>

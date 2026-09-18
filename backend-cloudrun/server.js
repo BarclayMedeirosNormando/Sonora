@@ -1180,29 +1180,46 @@ app.put('/api/admin/playlists/:id/reordenar', limitePainel, async (req, res) => 
 // ---- Admin: "Novidades" (álbuns ainda não revisados na curadoria) ----
 
 /**
- * Busca o catálogo de álbuns direto do cache do Drive (mesmo arquivo que
- * /cache serve) — reaproveitado aqui pra não duplicar a leitura contra
- * uma cópia separada.
+ * Busca o cache da biblioteca inteiro (álbuns + árvore de faixas) direto
+ * do Drive (mesmo arquivo que /cache serve) — reaproveitado tanto por
+ * /api/admin/cache (curadoria navega a biblioteca) quanto por
+ * /api/admin/novidades (só precisa da lista de álbuns).
  */
-async function obterAlbunsDoCache() {
+async function obterCacheCompleto() {
   const url =
     `https://www.googleapis.com/drive/v3/files/${CACHE_FILE_ID}` +
     `?alt=media&key=${DRIVE_API_KEY}`;
   const resposta = await fetch(url);
   if (!resposta.ok) throw new Error(`Drive respondeu HTTP ${resposta.status}`);
-  const json = await resposta.json();
-  return json.albuns || [];
+  return resposta.json();
 }
+
+/**
+ * Catálogo completo (álbuns + árvore de pastas/faixas) pra página de
+ * curadoria navegar/buscar a biblioteca e montar playlists. Diferente de
+ * /cache, não exige appId — protegido só por PAINEL_CHAVE, como o resto
+ * de /api/admin/*.
+ */
+app.get('/api/admin/cache', limitePainel, async (req, res) => {
+  if (!chavePainelValida(req)) return res.status(403).json({ erro: 'Chave ausente ou incorreta.' });
+  try {
+    const cache = await obterCacheCompleto();
+    return res.json(cache);
+  } catch (erro) {
+    console.error('Erro em /api/admin/cache:', erro);
+    return res.status(500).json({ erro: 'Falha ao carregar o catálogo.' });
+  }
+});
 
 app.get('/api/admin/novidades', limitePainel, async (req, res) => {
   if (!chavePainelValida(req)) return res.status(403).json({ erro: 'Chave ausente ou incorreta.' });
   try {
-    const [albuns, vistosSnap] = await Promise.all([
-      obterAlbunsDoCache(),
+    const [cache, vistosSnap] = await Promise.all([
+      obterCacheCompleto(),
       getFirestore().collection('curadoria_vistos').get(),
     ]);
     const vistos = new Set(vistosSnap.docs.map((d) => d.id));
-    const novidades = albuns.filter((a) => !vistos.has(a.id));
+    const novidades = (cache.albuns || []).filter((a) => !vistos.has(a.id));
     return res.json({ novidades, total: novidades.length });
   } catch (erro) {
     console.error('Erro em /api/admin/novidades:', erro);
@@ -1260,6 +1277,17 @@ app.get('/api/playlists/:id', limiteMidia, exigirAppIdLiberado, async (req, res)
     registrarAlerta('/api/playlists/:id', erro);
     return res.status(500).json({ erro: 'Falha ao carregar playlist.' });
   }
+});
+
+/**
+ * A página de curadoria (arquivo estático em public/curadoria.html) —
+ * onde o Barclay monta as playlists. Mesma trava de chave do /painel.
+ */
+app.get('/curadoria', limitePainel, (req, res) => {
+  if (!chavePainelValida(req)) {
+    return res.status(403).send('Acesso negado — chave ausente ou incorreta. Use /curadoria?chave=SUACHAVE');
+  }
+  res.sendFile(path.join(__dirname, 'public', 'curadoria.html'));
 });
 
 /**
