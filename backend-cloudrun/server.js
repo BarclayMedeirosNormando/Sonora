@@ -1070,8 +1070,13 @@ app.post('/api/admin/playlists', limitePainel, async (req, res) => {
     ? [...new Set(req.body.appIds.map(String).filter(Boolean))]
     : [];
   if (!nome) return res.status(400).json({ erro: 'nome é obrigatório.' });
-  if (!appIds.length) return res.status(400).json({ erro: 'Escolha pelo menos um app/usuário pra essa playlist.' });
+  if (!appIds.length) return res.status(400).json({ erro: 'Informe pelo menos um App_ID pra essa playlist.' });
   try {
+    const liberados = await obterLiberados();
+    const invalidos = appIds.filter((id) => !liberados.has(id));
+    if (invalidos.length) {
+      return res.status(400).json({ erro: `App_ID(s) não liberado(s): ${invalidos.join(', ')}` });
+    }
     const agora = new Date().toISOString();
     const ref = await getFirestore().collection('playlists').add({
       nome,
@@ -1189,14 +1194,21 @@ app.put('/api/admin/playlists/:id/reordenar', limitePainel, async (req, res) => 
  * playlist precisa de pelo menos um App_ID alvo (não existe playlist
  * "pública" pra todo mundo); o app só lista/abre playlists onde o seu
  * appId está nessa lista (ver GET /api/playlists e /api/playlists/:id).
+ * Cada App_ID é validado contra a planilha de liberados — não aceita ID
+ * inventado/errado nem de gente não liberada.
  */
 app.put('/api/admin/playlists/:id/usuarios', limitePainel, async (req, res) => {
   if (!chavePainelValida(req)) return res.status(403).json({ erro: 'Chave ausente ou incorreta.' });
   const appIds = Array.isArray(req.body && req.body.appIds)
     ? [...new Set(req.body.appIds.map(String).filter(Boolean))]
     : [];
-  if (!appIds.length) return res.status(400).json({ erro: 'Escolha pelo menos um app/usuário pra essa playlist.' });
+  if (!appIds.length) return res.status(400).json({ erro: 'Informe pelo menos um App_ID pra essa playlist.' });
   try {
+    const liberados = await obterLiberados();
+    const invalidos = appIds.filter((id) => !liberados.has(id));
+    if (invalidos.length) {
+      return res.status(400).json({ erro: `App_ID(s) não liberado(s): ${invalidos.join(', ')}` });
+    }
     const ref = getFirestore().collection('playlists').doc(req.params.id);
     const doc = await ref.get();
     if (!doc.exists) return res.status(404).json({ erro: 'Playlist não encontrada.' });
