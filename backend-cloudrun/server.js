@@ -1026,6 +1026,242 @@ app.get('/api/engajamento', limitePainel, async (req, res) => {
   }
 });
 
+// ============================================================
+// PLAYLISTS CURADAS (10/09/2026) — em vez do usuário navegar pastas
+// cruas do Drive, o Barclay cura faixas em playlists numa página de
+// curadoria própria; o app só lista o que está curado. Duas coleções
+// novas no Firestore:
+//   playlists/{id}              -> { nome, capaId, faixas: [...], criadoEm, atualizadoEm }
+//   curadoria_vistos/{albumId}  -> { albumId, status, vistoEm } — álbuns já
+//     revisados na curadoria (incluídos numa playlist ou ignorados), pra
+//     alimentar o contador "Novidades" sem repetir álbum já visto.
+// Rotas /api/admin/playlists* e /api/admin/novidades|vistos (protegidas
+// por PAINEL_CHAVE) são usadas só pela página de curadoria. Rotas
+// /api/playlists* (protegidas por appId liberado, mesmo padrão de /cache
+// e /midia) são as que o app consome.
+// ============================================================
+
+/** Playlist inteira, sem checagem de dono (uso pessoal). */
+async function obterPlaylistDoc(id) {
+  const doc = await getFirestore().collection('playlists').doc(id).get();
+  return doc.exists ? { id: doc.id, ...doc.data() } : null;
+}
+
+// ---- Admin: CRUD de playlists (curadoria) ----
+
+app.get('/api/admin/playlists', limitePainel, async (req, res) => {
+  if (!chavePainelValida(req)) return res.status(403).json({ erro: 'Chave ausente ou incorreta.' });
+  try {
+    const snap = await getFirestore().collection('playlists').orderBy('criadoEm', 'desc').get();
+    const playlists = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    return res.json({ playlists });
+  } catch (erro) {
+    console.error('Erro em GET /api/admin/playlists:', erro);
+    return res.status(500).json({ erro: 'Falha ao carregar playlists.' });
+  }
+});
+
+app.post('/api/admin/playlists', limitePainel, async (req, res) => {
+  if (!chavePainelValida(req)) return res.status(403).json({ erro: 'Chave ausente ou incorreta.' });
+  const nome = String((req.body && req.body.nome) || '').trim();
+  if (!nome) return res.status(400).json({ erro: 'nome é obrigatório.' });
+  try {
+    const agora = new Date().toISOString();
+    const ref = await getFirestore().collection('playlists').add({
+      nome,
+      capaId: null,
+      faixas: [],
+      criadoEm: agora,
+      atualizadoEm: agora,
+    });
+    return res.json({ id: ref.id });
+  } catch (erro) {
+    console.error('Erro em POST /api/admin/playlists:', erro);
+    return res.status(500).json({ erro: 'Falha ao criar playlist.' });
+  }
+});
+
+app.put('/api/admin/playlists/:id', limitePainel, async (req, res) => {
+  if (!chavePainelValida(req)) return res.status(403).json({ erro: 'Chave ausente ou incorreta.' });
+  const { id } = req.params;
+  const nome = req.body && req.body.nome != null ? String(req.body.nome).trim() : null;
+  if (!nome) return res.status(400).json({ erro: 'nome é obrigatório.' });
+  try {
+    const ref = getFirestore().collection('playlists').doc(id);
+    const doc = await ref.get();
+    if (!doc.exists) return res.status(404).json({ erro: 'Playlist não encontrada.' });
+    await ref.update({ nome, atualizadoEm: new Date().toISOString() });
+    return res.json({ ok: true });
+  } catch (erro) {
+    console.error('Erro em PUT /api/admin/playlists/:id:', erro);
+    return res.status(500).json({ erro: 'Falha ao renomear playlist.' });
+  }
+});
+
+app.delete('/api/admin/playlists/:id', limitePainel, async (req, res) => {
+  if (!chavePainelValida(req)) return res.status(403).json({ erro: 'Chave ausente ou incorreta.' });
+  try {
+    await getFirestore().collection('playlists').doc(req.params.id).delete();
+    return res.json({ ok: true });
+  } catch (erro) {
+    console.error('Erro em DELETE /api/admin/playlists/:id:', erro);
+    return res.status(500).json({ erro: 'Falha ao apagar playlist.' });
+  }
+});
+
+/**
+ * Adiciona uma faixa à playlist (ignora se o fileId já estiver nela —
+ * clicar duas vezes no "+" da curadoria não duplica).
+ */
+app.post('/api/admin/playlists/:id/faixas', limitePainel, async (req, res) => {
+  if (!chavePainelValida(req)) return res.status(403).json({ erro: 'Chave ausente ou incorreta.' });
+  const { fileId, nome, albumId, albumNome, capaId } = req.body || {};
+  if (!fileId || !nome) return res.status(400).json({ erro: 'fileId e nome são obrigatórios.' });
+  try {
+    const ref = getFirestore().collection('playlists').doc(req.params.id);
+    const doc = await ref.get();
+    if (!doc.exists) return res.status(404).json({ erro: 'Playlist não encontrada.' });
+    const faixas = doc.data().faixas || [];
+    if (faixas.some((f) => f.fileId === fileId)) {
+      return res.json({ ok: true, jaExistia: true });
+    }
+    faixas.push({
+      fileId: String(fileId),
+      nome: String(nome),
+      albumId: albumId ? String(albumId) : null,
+      albumNome: albumNome ? String(albumNome) : '',
+      capaId: capaId ? String(capaId) : null,
+    });
+    const atualizacao = { faixas, atualizadoEm: new Date().toISOString() };
+    // Primeira faixa adicionada define a capa da playlist, se ainda não tiver uma.
+    if (!doc.data().capaId && capaId) atualizacao.capaId = String(capaId);
+    await ref.update(atualizacao);
+    return res.json({ ok: true });
+  } catch (erro) {
+    console.error('Erro em POST /api/admin/playlists/:id/faixas:', erro);
+    return res.status(500).json({ erro: 'Falha ao adicionar faixa.' });
+  }
+});
+
+app.delete('/api/admin/playlists/:id/faixas/:fileId', limitePainel, async (req, res) => {
+  if (!chavePainelValida(req)) return res.status(403).json({ erro: 'Chave ausente ou incorreta.' });
+  try {
+    const ref = getFirestore().collection('playlists').doc(req.params.id);
+    const doc = await ref.get();
+    if (!doc.exists) return res.status(404).json({ erro: 'Playlist não encontrada.' });
+    const faixas = (doc.data().faixas || []).filter((f) => f.fileId !== req.params.fileId);
+    await ref.update({ faixas, atualizadoEm: new Date().toISOString() });
+    return res.json({ ok: true });
+  } catch (erro) {
+    console.error('Erro em DELETE /api/admin/playlists/:id/faixas/:fileId:', erro);
+    return res.status(500).json({ erro: 'Falha ao remover faixa.' });
+  }
+});
+
+/** Reordena as faixas — body { ordem: [fileId, fileId, ...] }. */
+app.put('/api/admin/playlists/:id/reordenar', limitePainel, async (req, res) => {
+  if (!chavePainelValida(req)) return res.status(403).json({ erro: 'Chave ausente ou incorreta.' });
+  const ordem = (req.body && req.body.ordem) || [];
+  if (!Array.isArray(ordem) || !ordem.length) return res.status(400).json({ erro: 'ordem é obrigatória.' });
+  try {
+    const ref = getFirestore().collection('playlists').doc(req.params.id);
+    const doc = await ref.get();
+    if (!doc.exists) return res.status(404).json({ erro: 'Playlist não encontrada.' });
+    const porId = new Map((doc.data().faixas || []).map((f) => [f.fileId, f]));
+    const faixasOrdenadas = ordem.map((fid) => porId.get(fid)).filter(Boolean);
+    await ref.update({ faixas: faixasOrdenadas, atualizadoEm: new Date().toISOString() });
+    return res.json({ ok: true });
+  } catch (erro) {
+    console.error('Erro em PUT /api/admin/playlists/:id/reordenar:', erro);
+    return res.status(500).json({ erro: 'Falha ao reordenar.' });
+  }
+});
+
+// ---- Admin: "Novidades" (álbuns ainda não revisados na curadoria) ----
+
+/**
+ * Busca o catálogo de álbuns direto do cache do Drive (mesmo arquivo que
+ * /cache serve) — reaproveitado aqui pra não duplicar a leitura contra
+ * uma cópia separada.
+ */
+async function obterAlbunsDoCache() {
+  const url =
+    `https://www.googleapis.com/drive/v3/files/${CACHE_FILE_ID}` +
+    `?alt=media&key=${DRIVE_API_KEY}`;
+  const resposta = await fetch(url);
+  if (!resposta.ok) throw new Error(`Drive respondeu HTTP ${resposta.status}`);
+  const json = await resposta.json();
+  return json.albuns || [];
+}
+
+app.get('/api/admin/novidades', limitePainel, async (req, res) => {
+  if (!chavePainelValida(req)) return res.status(403).json({ erro: 'Chave ausente ou incorreta.' });
+  try {
+    const [albuns, vistosSnap] = await Promise.all([
+      obterAlbunsDoCache(),
+      getFirestore().collection('curadoria_vistos').get(),
+    ]);
+    const vistos = new Set(vistosSnap.docs.map((d) => d.id));
+    const novidades = albuns.filter((a) => !vistos.has(a.id));
+    return res.json({ novidades, total: novidades.length });
+  } catch (erro) {
+    console.error('Erro em /api/admin/novidades:', erro);
+    return res.status(500).json({ erro: 'Falha ao carregar novidades.' });
+  }
+});
+
+/** Marca um álbum como revisado (incluído numa playlist ou ignorado). */
+app.post('/api/admin/vistos', limitePainel, async (req, res) => {
+  if (!chavePainelValida(req)) return res.status(403).json({ erro: 'Chave ausente ou incorreta.' });
+  const { albumId, status } = req.body || {};
+  if (!albumId) return res.status(400).json({ erro: 'albumId é obrigatório.' });
+  try {
+    await getFirestore().collection('curadoria_vistos').doc(String(albumId)).set({
+      albumId: String(albumId),
+      status: status ? String(status) : 'ignorado',
+      vistoEm: Firestore.FieldValue.serverTimestamp(),
+    });
+    return res.json({ ok: true });
+  } catch (erro) {
+    console.error('Erro em /api/admin/vistos:', erro);
+    return res.status(500).json({ erro: 'Falha ao marcar como visto.' });
+  }
+});
+
+// ---- App: playlists visíveis pro usuário final ----
+
+app.get('/api/playlists', limiteMidia, exigirAppIdLiberado, async (req, res) => {
+  try {
+    const snap = await getFirestore().collection('playlists').orderBy('atualizadoEm', 'desc').get();
+    const playlists = snap.docs.map((d) => {
+      const dados = d.data();
+      return {
+        id: d.id,
+        nome: dados.nome,
+        capaId: dados.capaId || null,
+        totalFaixas: (dados.faixas || []).length,
+      };
+    });
+    return res.json({ playlists });
+  } catch (erro) {
+    console.error('Erro em GET /api/playlists:', erro);
+    registrarAlerta('/api/playlists', erro);
+    return res.status(500).json({ erro: 'Falha ao carregar playlists.' });
+  }
+});
+
+app.get('/api/playlists/:id', limiteMidia, exigirAppIdLiberado, async (req, res) => {
+  try {
+    const playlist = await obterPlaylistDoc(req.params.id);
+    if (!playlist) return res.status(404).json({ erro: 'Playlist não encontrada.' });
+    return res.json(playlist);
+  } catch (erro) {
+    console.error('Erro em GET /api/playlists/:id:', erro);
+    registrarAlerta('/api/playlists/:id', erro);
+    return res.status(500).json({ erro: 'Falha ao carregar playlist.' });
+  }
+});
+
 /**
  * A página do painel em si (arquivo estático em public/painel.html). A
  * página faz as chamadas de API do lado do navegador, repassando a
