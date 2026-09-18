@@ -113,6 +113,10 @@
   .icon-btn { background: none; border: none; cursor: pointer; color: var(--text-muted); font-size: 13px; padding: 3px 5px; border-radius: 5px; }
   .icon-btn:hover { color: var(--text-primary); background: var(--grid); }
 
+  .alvos-box { border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; margin-bottom: 12px; max-height: 150px; overflow-y: auto; }
+  .alvos-box label { display: flex; align-items: center; gap: 7px; font-size: 12.5px; padding: 4px 0; cursor: pointer; }
+  .alvos-box .vazio { font-size: 12px; color: var(--text-muted); }
+
   .tag { display:inline-flex; align-items:center; font-size: 11px; font-weight: 550; padding: 2px 8px; border-radius: 999px;
     background: rgba(250,178,25,0.14); color: var(--status-warning); border: 1px solid rgba(250,178,25,0.35); }
 
@@ -156,6 +160,11 @@
           <button class="btn secondary small" id="btn-renomear">Renomear</button>
           <button class="btn danger small" id="btn-apagar">Apagar</button>
         </div>
+
+        <p class="sub" style="margin-bottom:6px;">Quem vê (marque pra playlist selecionada, ou pra criar uma nova abaixo)</p>
+        <div class="alvos-box" id="alvos-box"></div>
+        <button class="btn secondary small" id="btn-salvar-alvos" style="margin-bottom:14px;">Salvar quem vê</button>
+
         <div class="row-inline" style="margin-bottom:12px;">
           <input type="text" id="nova-playlist-input" placeholder="Nome da nova playlist..." />
           <button class="btn small" id="btn-nova-playlist">Criar</button>
@@ -212,6 +221,7 @@
   let playlists = [];
   let playlistAtualId = null;
   let albumAberto = null; // id do álbum expandido na biblioteca
+  let usuariosLiberados = []; // [{appId, nome}]
 
   // ---------- Abas ----------
   function ativarAba(nome) {
@@ -349,6 +359,50 @@
     carregarPlaylistAtual();
   });
 
+  // ---------- Quem vê (checklist de usuários liberados) ----------
+  async function carregarUsuariosLiberados() {
+    try {
+      const resp = await apiGet('/api/usuarios');
+      usuariosLiberados = (resp.usuarios || []).filter((u) => u.status.toLowerCase() === 'liberado');
+      renderAlvos();
+    } catch (err) {
+      showBanner('error', 'Falha ao carregar usuários liberados: ' + err.message);
+    }
+  }
+
+  function renderAlvos() {
+    const box = document.getElementById('alvos-box');
+    if (!usuariosLiberados.length) {
+      box.innerHTML = '<div class="vazio">Nenhum usuário liberado ainda.</div>';
+      return;
+    }
+    const playlist = playlists.find((p) => p.id === playlistAtualId);
+    const marcados = new Set(playlist ? (playlist.appIds || []) : []);
+    box.innerHTML = '';
+    usuariosLiberados.forEach((u) => {
+      const label = document.createElement('label');
+      label.innerHTML = `<input type="checkbox" value="${u.appId}" ${marcados.has(u.appId) ? 'checked' : ''}> ${u.nome || u.appId}`;
+      box.appendChild(label);
+    });
+  }
+
+  function alvosMarcados() {
+    return Array.from(document.querySelectorAll('#alvos-box input[type="checkbox"]:checked')).map((c) => c.value);
+  }
+
+  document.getElementById('btn-salvar-alvos').addEventListener('click', async () => {
+    if (!playlistAtualId) return showBanner('error', 'Selecione uma playlist primeiro.');
+    const appIds = alvosMarcados();
+    if (!appIds.length) return showBanner('error', 'Marque pelo menos um usuário.');
+    try {
+      await apiSend('PUT', `/api/admin/playlists/${playlistAtualId}/usuarios`, { appIds });
+      clearBanner();
+      await carregarPlaylistAtual();
+    } catch (err) {
+      showBanner('error', 'Falha ao salvar quem vê: ' + err.message);
+    }
+  });
+
   function renderPlaylistTracks() {
     const playlist = playlists.find((p) => p.id === playlistAtualId);
     const container = document.getElementById('playlist-tracks');
@@ -388,6 +442,7 @@
       playlists = lista.playlists || [];
       renderPlaylistSelect();
       renderPlaylistTracks();
+      renderAlvos();
     } catch (err) {
       showBanner('error', 'Falha ao carregar playlists: ' + err.message);
     }
@@ -421,10 +476,13 @@
     const input = document.getElementById('nova-playlist-input');
     const nome = input.value.trim();
     if (!nome) return;
+    const appIds = alvosMarcados();
+    if (!appIds.length) return showBanner('error', 'Marque quem vai ver essa playlist antes de criar.');
     try {
-      const resp = await apiSend('POST', '/api/admin/playlists', { nome });
+      const resp = await apiSend('POST', '/api/admin/playlists', { nome, appIds });
       input.value = '';
       playlistAtualId = resp.id;
+      clearBanner();
       await carregarPlaylistAtual();
     } catch (err) {
       showBanner('error', 'Falha ao criar playlist: ' + err.message);
@@ -508,6 +566,7 @@
         apiGet('/api/admin/cache'),
         carregarPlaylistAtual(),
         carregarNovidades(),
+        carregarUsuariosLiberados(),
       ]);
       cache = cacheResp;
       document.getElementById('subtitle').textContent =

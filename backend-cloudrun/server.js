@@ -1029,16 +1029,18 @@ app.get('/api/engajamento', limitePainel, async (req, res) => {
 // ============================================================
 // PLAYLISTS CURADAS (10/09/2026) — em vez do usuário navegar pastas
 // cruas do Drive, o Barclay cura faixas em playlists numa página de
-// curadoria própria; o app só lista o que está curado. Duas coleções
-// novas no Firestore:
-//   playlists/{id}              -> { nome, capaId, faixas: [...], criadoEm, atualizadoEm }
+// curadoria própria; o app só lista o que está curado, e só as
+// playlists direcionadas ao appId de quem está pedindo (não existe
+// playlist pública/compartilhada — toda playlist tem 1+ App_ID alvo,
+// ver appIds abaixo). Duas coleções novas no Firestore:
+//   playlists/{id}              -> { nome, capaId, faixas: [...], appIds: [...], criadoEm, atualizadoEm }
 //   curadoria_vistos/{albumId}  -> { albumId, status, vistoEm } — álbuns já
 //     revisados na curadoria (incluídos numa playlist ou ignorados), pra
 //     alimentar o contador "Novidades" sem repetir álbum já visto.
 // Rotas /api/admin/playlists* e /api/admin/novidades|vistos (protegidas
 // por PAINEL_CHAVE) são usadas só pela página de curadoria. Rotas
 // /api/playlists* (protegidas por appId liberado, mesmo padrão de /cache
-// e /midia) são as que o app consome.
+// e /midia) são as que o app consome — e filtram por appIds.
 // ============================================================
 
 /** Playlist inteira, sem checagem de dono (uso pessoal). */
@@ -1064,13 +1066,18 @@ app.get('/api/admin/playlists', limitePainel, async (req, res) => {
 app.post('/api/admin/playlists', limitePainel, async (req, res) => {
   if (!chavePainelValida(req)) return res.status(403).json({ erro: 'Chave ausente ou incorreta.' });
   const nome = String((req.body && req.body.nome) || '').trim();
+  const appIds = Array.isArray(req.body && req.body.appIds)
+    ? [...new Set(req.body.appIds.map(String).filter(Boolean))]
+    : [];
   if (!nome) return res.status(400).json({ erro: 'nome é obrigatório.' });
+  if (!appIds.length) return res.status(400).json({ erro: 'Escolha pelo menos um app/usuário pra essa playlist.' });
   try {
     const agora = new Date().toISOString();
     const ref = await getFirestore().collection('playlists').add({
       nome,
       capaId: null,
       faixas: [],
+      appIds,
       criadoEm: agora,
       atualizadoEm: agora,
     });
@@ -1177,6 +1184,30 @@ app.put('/api/admin/playlists/:id/reordenar', limitePainel, async (req, res) => 
   }
 });
 
+/**
+ * Muda quem vê a playlist — body { appIds: [appId, appId, ...] }. Toda
+ * playlist precisa de pelo menos um App_ID alvo (não existe playlist
+ * "pública" pra todo mundo); o app só lista/abre playlists onde o seu
+ * appId está nessa lista (ver GET /api/playlists e /api/playlists/:id).
+ */
+app.put('/api/admin/playlists/:id/usuarios', limitePainel, async (req, res) => {
+  if (!chavePainelValida(req)) return res.status(403).json({ erro: 'Chave ausente ou incorreta.' });
+  const appIds = Array.isArray(req.body && req.body.appIds)
+    ? [...new Set(req.body.appIds.map(String).filter(Boolean))]
+    : [];
+  if (!appIds.length) return res.status(400).json({ erro: 'Escolha pelo menos um app/usuário pra essa playlist.' });
+  try {
+    const ref = getFirestore().collection('playlists').doc(req.params.id);
+    const doc = await ref.get();
+    if (!doc.exists) return res.status(404).json({ erro: 'Playlist não encontrada.' });
+    await ref.update({ appIds, atualizadoEm: new Date().toISOString() });
+    return res.json({ ok: true });
+  } catch (erro) {
+    console.error('Erro em PUT /api/admin/playlists/:id/usuarios:', erro);
+    return res.status(500).json({ erro: 'Falha ao atualizar os usuários da playlist.' });
+  }
+});
+
 // ---- Admin: "Novidades" (álbuns ainda não revisados na curadoria) ----
 
 /**
@@ -1247,18 +1278,26 @@ app.post('/api/admin/vistos', limitePainel, async (req, res) => {
 
 // ---- App: playlists visíveis pro usuário final ----
 
+/**
+ * Só devolve as playlists cujo appIds inclui quem está pedindo — cada
+ * playlist é direcionada a um ou mais Apps/usuários específicos, não
+ * existe playlist pública/compartilhada por todos.
+ */
 app.get('/api/playlists', limiteMidia, exigirAppIdLiberado, async (req, res) => {
   try {
+    const appId = req.query.appId;
     const snap = await getFirestore().collection('playlists').orderBy('atualizadoEm', 'desc').get();
-    const playlists = snap.docs.map((d) => {
-      const dados = d.data();
-      return {
-        id: d.id,
-        nome: dados.nome,
-        capaId: dados.capaId || null,
-        totalFaixas: (dados.faixas || []).length,
-      };
-    });
+    const playlists = snap.docs
+      .filter((d) => (d.data().appIds || []).includes(appId))
+      .map((d) => {
+        const dados = d.data();
+        return {
+          id: d.id,
+          nome: dados.nome,
+          capaId: dados.capaId || null,
+          totalFaixas: (dados.faixas || []).length,
+        };
+      });
     return res.json({ playlists });
   } catch (erro) {
     console.error('Erro em GET /api/playlists:', erro);
@@ -1271,6 +1310,9 @@ app.get('/api/playlists/:id', limiteMidia, exigirAppIdLiberado, async (req, res)
   try {
     const playlist = await obterPlaylistDoc(req.params.id);
     if (!playlist) return res.status(404).json({ erro: 'Playlist não encontrada.' });
+    if (!(playlist.appIds || []).includes(req.query.appId)) {
+      return res.status(403).json({ erro: 'Você não tem acesso a essa playlist.' });
+    }
     return res.json(playlist);
   } catch (erro) {
     console.error('Erro em GET /api/playlists/:id:', erro);
