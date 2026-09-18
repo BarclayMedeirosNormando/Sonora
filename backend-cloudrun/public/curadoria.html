@@ -99,6 +99,7 @@
     border-bottom: 1px solid var(--grid); font-size: 12.5px; }
   .track-item:last-child { border-bottom: none; }
   .track-item .nome { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .track-item .acoes { display: flex; gap: 4px; flex-shrink: 0; }
 
   .playlist-header { display: flex; gap: 8px; align-items: center; margin-bottom: 10px; flex-wrap: wrap; }
   .playlist-header select { flex: 1; min-width: 140px; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border);
@@ -189,6 +190,8 @@
   </div>
 </div>
 
+<audio id="audio-preview" style="display:none;"></audio>
+
 <script>
 (function () {
   const params = new URLSearchParams(location.search);
@@ -226,6 +229,30 @@
   let playlists = [];
   let playlistAtualId = null;
   let albumAberto = null; // id do álbum expandido na biblioteca
+
+  // ---------- Preview de áudio ----------
+  const audioPreview = document.getElementById('audio-preview');
+  let previewAtual = null; // fileId tocando agora
+
+  function alternarPreview(fileId, btn) {
+    if (previewAtual === fileId && !audioPreview.paused) {
+      audioPreview.pause();
+      return;
+    }
+    previewAtual = fileId;
+    audioPreview.src = `/api/admin/midia/${fileId}?chave=${encodeURIComponent(CHAVE)}`;
+    audioPreview.play().catch((err) => showBanner('error', 'Falha ao tocar: ' + err.message));
+  }
+
+  function atualizarBotoesPreview() {
+    document.querySelectorAll('.btn-preview').forEach((b) => {
+      const tocando = b.dataset.preview === previewAtual && !audioPreview.paused;
+      b.textContent = tocando ? '⏸' : '▶';
+    });
+  }
+  audioPreview.addEventListener('play', atualizarBotoesPreview);
+  audioPreview.addEventListener('pause', atualizarBotoesPreview);
+  audioPreview.addEventListener('ended', () => { previewAtual = null; atualizarBotoesPreview(); });
 
   // ---------- Abas ----------
   function ativarAba(nome) {
@@ -283,8 +310,9 @@
     faixas.forEach((faixa) => {
       const item = document.createElement('div');
       item.className = 'track-item';
-      item.innerHTML = `<span class="nome">${faixa.name}</span><button class="btn small">+</button>`;
-      item.querySelector('button').addEventListener('click', () => adicionarFaixa(faixa, album));
+      item.innerHTML = `<span class="nome">${faixa.name}</span><span class="acoes"><button class="icon-btn btn-preview" data-preview="${faixa.id}">▶</button><button class="btn small">+</button></span>`;
+      item.querySelector('.btn-preview').addEventListener('click', (e) => alternarPreview(faixa.id, e.currentTarget));
+      item.querySelector('.btn.small').addEventListener('click', () => adicionarFaixa(faixa, album));
       lista.appendChild(item);
     });
     panel.innerHTML = '';
@@ -413,11 +441,13 @@
       item.innerHTML = `
         <span class="nome">${faixa.nome}${faixa.albumNome ? `<span class="album"> — ${faixa.albumNome}</span>` : ''}</span>
         <span class="pt-actions">
+          <button class="icon-btn btn-preview" data-preview="${faixa.fileId}">▶</button>
           <button class="icon-btn" data-acao="up" ${i === 0 ? 'disabled' : ''}>↑</button>
           <button class="icon-btn" data-acao="down" ${i === playlist.faixas.length - 1 ? 'disabled' : ''}>↓</button>
           <button class="icon-btn" data-acao="remover">✕</button>
         </span>
       `;
+      item.querySelector('.btn-preview').addEventListener('click', (e) => alternarPreview(faixa.fileId, e.currentTarget));
       item.querySelector('[data-acao="remover"]').addEventListener('click', () => removerFaixa(faixa.fileId));
       item.querySelector('[data-acao="up"]').addEventListener('click', () => moverFaixa(i, -1));
       item.querySelector('[data-acao="down"]').addEventListener('click', () => moverFaixa(i, 1));

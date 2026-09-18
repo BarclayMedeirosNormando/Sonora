@@ -391,13 +391,18 @@ app.get('/cache', limiteMidia, exigirAppIdLiberado, async (req, res) => {
  * enfim tinha terminado por trás) funcionava normal. Baixar tudo pra um
  * Buffer primeiro elimina essa dependência entre as duas coisas.
  */
-app.get('/midia/:fileId', limiteMidia, exigirAppIdLiberado, async (req, res) => {
-  const { fileId } = req.params;
+/**
+ * Envia os bytes de uma faixa (cache "preguiçoso" no Cloud Storage) —
+ * lógica compartilhada entre /midia/:fileId (app, exige appId liberado)
+ * e /api/admin/midia/:fileId (curadoria, exige só PAINEL_CHAVE, usado
+ * pro preview antes de adicionar a uma playlist).
+ */
+async function enviarMidia(req, res, fileId) {
   if (!/^[a-zA-Z0-9_-]+$/.test(fileId || '')) {
     return res.status(400).json({ erro: 'fileId inválido.' });
   }
   if (!MIDIA_BUCKET) {
-    console.error('/midia chamado sem MIDIA_BUCKET configurado.');
+    console.error('mídia chamada sem MIDIA_BUCKET configurado.');
     return res.status(500).json({ erro: 'Cache de mídia não configurado.' });
   }
 
@@ -413,7 +418,6 @@ app.get('/midia/:fileId', limiteMidia, exigirAppIdLiberado, async (req, res) => 
       return res.redirect(302, urlPublica);
     }
 
-    // Cache miss: baixa a faixa inteira do Drive pra memória.
     const drive = await getDriveClient();
     const respostaDrive = await drive.files.get(
       { fileId, alt: 'media' },
@@ -421,9 +425,6 @@ app.get('/midia/:fileId', limiteMidia, exigirAppIdLiberado, async (req, res) => 
     );
     const bytes = Buffer.from(respostaDrive.data);
 
-    // Suporte básico a "Range" mesmo nesse primeiro play (raro — só
-    // acontece uma vez por faixa, pra sempre — mas evita qualquer
-    // estranheza ao arrastar a barra de progresso logo na primeira vez).
     const range = req.headers.range;
     const combinacao = range && /^bytes=(\d*)-(\d*)$/.exec(range);
     if (combinacao && (combinacao[1] || combinacao[2])) {
@@ -442,21 +443,22 @@ app.get('/midia/:fileId', limiteMidia, exigirAppIdLiberado, async (req, res) => 
       res.send(bytes);
     }
 
-    // Grava no bucket DEPOIS de já ter respondido — o cliente não espera
-    // por isso, só fica sem cache dessa vez se der erro (tenta de novo
-    // na próxima faixa pedida).
     objeto
       .save(bytes, { contentType: 'audio/mpeg', resumable: false })
       .catch((erroGravacao) => {
         console.error(`Erro ao gravar cache de mídia (${fileId}):`, erroGravacao);
       });
   } catch (erro) {
-    console.error(`Erro em /midia/${fileId}:`, erro);
+    console.error(`Erro ao enviar mídia ${fileId}:`, erro);
     registrarAlerta('/midia', `${fileId}: ${(erro && erro.message) || erro}`);
     if (!res.headersSent) {
       res.status(502).json({ erro: 'Falha ao carregar a faixa.' });
     }
   }
+}
+
+app.get('/midia/:fileId', limiteMidia, exigirAppIdLiberado, async (req, res) => {
+  await enviarMidia(req, res, req.params.fileId);
 });
 
 /**
@@ -1252,6 +1254,17 @@ app.get('/api/admin/cache', limitePainel, async (req, res) => {
     console.error('Erro em /api/admin/cache:', erro);
     return res.status(500).json({ erro: 'Falha ao carregar o catálogo.' });
   }
+});
+
+/**
+ * Preview de uma faixa direto na curadoria, antes de adicionar a uma
+ * playlist — mesma lógica de cache do /midia/:fileId, só que protegida
+ * por PAINEL_CHAVE (aceita ?chave=X, já que a tag <audio> não manda
+ * headers customizados) em vez de appId liberado.
+ */
+app.get('/api/admin/midia/:fileId', limiteMidia, async (req, res) => {
+  if (!chavePainelValida(req)) return res.status(403).json({ erro: 'Chave ausente ou incorreta.' });
+  await enviarMidia(req, res, req.params.fileId);
 });
 
 app.get('/api/admin/novidades', limitePainel, async (req, res) => {
