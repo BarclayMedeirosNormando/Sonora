@@ -1,5 +1,6 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../core/constants.dart';
@@ -25,11 +26,18 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   late Future<List<PlaylistResumo>> _playlistsFuture;
+  String? _appId;
 
   @override
   void initState() {
     super.initState();
     _playlistsFuture = _carregarPlaylists();
+    // Carregado separado da lista de playlists -- o App_ID já está em
+    // cache local (DeviceIdService), então isso resolve quase instantâneo
+    // e não precisa bloquear o resto da tela.
+    DeviceIdService.getOrCreateDeviceId().then((id) {
+      if (mounted) setState(() => _appId = id);
+    });
   }
 
   Future<List<PlaylistResumo>> _carregarPlaylists() async {
@@ -42,6 +50,15 @@ class _HomeScreenState extends State<HomeScreen> {
       _playlistsFuture = _carregarPlaylists();
     });
     await _playlistsFuture;
+  }
+
+  void _copiarAppId() {
+    final id = _appId;
+    if (id == null) return;
+    Clipboard.setData(ClipboardData(text: id));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('ID $id copiado')),
+    );
   }
 
   @override
@@ -65,6 +82,40 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ],
         ),
+        // ID do dispositivo, sempre visível -- pra pessoa conseguir
+        // mandar de novo (ex: pra liberar/direcionar outra playlist) sem
+        // precisar desinstalar e reinstalar pra ver de novo a tela de
+        // validação. Toque copia pro clipboard.
+        actions: [
+          if (_appId != null)
+            Padding(
+              padding: const EdgeInsets.only(right: 12),
+              child: Center(
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(6),
+                  onTap: _copiarAppId,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          'ID: $_appId',
+                          style: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: AppTheme.textSecondary,
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        const Icon(Icons.copy, size: 14, color: AppTheme.textSecondary),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
       ),
       body: RefreshIndicator(
         onRefresh: _recarregar,
