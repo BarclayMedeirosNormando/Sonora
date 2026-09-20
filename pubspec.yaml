@@ -1,7 +1,7 @@
 name: sonora
 description: "Sonora - player de música com backend no Google Drive"
 publish_to: 'none'
-version: 2.5.5+25
+version: 3.1.0+27
 
 environment:
   sdk: '>=3.3.0 <4.0.0'
@@ -38,6 +38,9 @@ dependencies:
 
   # Pasta local do app pra guardar mp3 baixados (ouvir offline)
   path_provider: ^2.1.4
+
+  # Detecta Wi-Fi x dados móveis (downloads do modo offline só no Wi-Fi)
+  connectivity_plus: ^6.1.4
 
   # Abrir o WhatsApp com mensagem pronta (tela "Pedir música")
   url_launcher: ^6.3.1

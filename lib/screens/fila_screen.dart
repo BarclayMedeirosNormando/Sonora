@@ -1,6 +1,8 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../core/constants.dart';
 import '../core/theme.dart';
 import '../services/player_service.dart';
 
@@ -32,12 +34,37 @@ class FilaScreen extends StatelessWidget {
             itemBuilder: (context, index) {
               final track = fila[index];
               final tocandoAgora = index == player.indiceAtual;
+              final capaUrl = track.capaUrl(AppConstants.driveApiKey);
 
               return ListTile(
                 key: ValueKey('${track.id}_$index'),
-                leading: Icon(
-                  tocandoAgora ? Icons.volume_up : Icons.music_note,
-                  color: tocandoAgora ? AppTheme.accent : AppTheme.textSecondary,
+                leading: ClipRRect(
+                  borderRadius: BorderRadius.circular(6),
+                  child: SizedBox(
+                    width: 44,
+                    height: 44,
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        capaUrl != null
+                            ? CachedNetworkImage(
+                                imageUrl: capaUrl,
+                                fit: BoxFit.cover,
+                                memCacheWidth: 130,
+                                placeholder: (context, url) =>
+                                    Container(color: AppTheme.surfaceHigh),
+                                errorWidget: (context, url, error) =>
+                                    Container(color: AppTheme.surfaceHigh),
+                              )
+                            : Container(color: AppTheme.surfaceHigh),
+                        if (tocandoAgora)
+                          Container(
+                            color: Colors.black54,
+                            child: const Icon(Icons.volume_up, color: AppTheme.accent),
+                          ),
+                      ],
+                    ),
+                  ),
                 ),
                 title: Text(
                   track.displayTitle,
@@ -48,6 +75,17 @@ class FilaScreen extends StatelessWidget {
                     fontWeight: tocandoAgora ? FontWeight.bold : FontWeight.normal,
                   ),
                 ),
+                subtitle: track.albumNome.isNotEmpty
+                    ? Text(
+                        track.albumNome,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: AppTheme.textSecondary,
+                          fontSize: 12,
+                        ),
+                      )
+                    : null,
                 trailing: ReorderableDragStartListener(
                   index: index,
                   child: const Icon(Icons.drag_handle, color: AppTheme.textSecondary),

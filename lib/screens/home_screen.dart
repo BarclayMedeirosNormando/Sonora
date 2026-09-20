@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -8,8 +10,13 @@ import '../core/theme.dart';
 import '../models/playlist.dart';
 import '../services/api_service.dart';
 import '../services/device_id_service.dart';
+import '../services/offline_playlist_service.dart';
 import '../services/player_service.dart';
 import '../services/playlist_vistas_service.dart';
+import '../widgets/aparece.dart';
+import '../widgets/capa_placeholder.dart';
+import '../widgets/estado_vazio.dart';
+import '../widgets/skeletons.dart';
 import 'player_screen.dart';
 import 'playlist_screen.dart';
 
@@ -41,9 +48,14 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<_HomeDados> _carregarPlaylists() async {
+    // Lido antes do primeiro await, enquanto o context ainda é seguro.
+    final offline = context.read<OfflinePlaylistService>();
     final appId = await DeviceIdService.getOrCreateDeviceId();
     final playlists = await ApiService.obterPlaylists(appId);
     final novidades = await PlaylistVistasService.verificar(playlists);
+    // Modo offline: baixa o que entrou de novo nas playlists ligadas (roda
+    // solto, sem segurar a Home).
+    unawaited(offline.sincronizarTodas(playlists));
     return _HomeDados(playlists, novidades);
   }
 
@@ -68,6 +80,7 @@ class _HomeScreenState extends State<HomeScreen> {
   void _copiarAppId() {
     final id = _appId;
     if (id == null) return;
+    HapticFeedback.selectionClick();
     Clipboard.setData(ClipboardData(text: id));
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('ID $id copiado')),
@@ -90,54 +103,26 @@ class _HomeScreenState extends State<HomeScreen> {
               style: TextStyle(
                 fontSize: 11,
                 fontWeight: FontWeight.normal,
-                color: AppTheme.textSecondary.withOpacity(0.75),
+                color: AppTheme.textSecondary.withValues(alpha: 0.75),
               ),
             ),
           ],
         ),
-        // ID do dispositivo, sempre visível -- pra pessoa conseguir
-        // mandar de novo (ex: pra liberar/direcionar outra playlist) sem
-        // precisar desinstalar e reinstalar pra ver de novo a tela de
-        // validação. Toque copia pro clipboard.
-        actions: [
-          if (_appId != null)
-            Padding(
-              padding: const EdgeInsets.only(right: 12),
-              child: Center(
-                child: InkWell(
-                  borderRadius: BorderRadius.circular(6),
-                  onTap: _copiarAppId,
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          'ID: $_appId',
-                          style: const TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                            color: AppTheme.textSecondary,
-                          ),
-                        ),
-                        const SizedBox(width: 4),
-                        const Icon(Icons.copy, size: 14, color: AppTheme.textSecondary),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ),
-        ],
       ),
       body: RefreshIndicator(
+        color: AppTheme.accent,
         onRefresh: _recarregar,
         child: ListView(
           physics: const AlwaysScrollableScrollPhysics(),
-          padding: const EdgeInsets.only(bottom: 16),
+          padding: const EdgeInsets.only(bottom: 24),
           children: [
+            _Cabecalho(appId: _appId, onCopiar: _copiarAppId),
             const _ContinuarOuvindo(),
-            _SecaoPlaylists(future: _playlistsFuture, onVoltar: _aoVoltarDaPlaylist),
+            _SecaoPlaylists(
+              future: _playlistsFuture,
+              onVoltar: _aoVoltarDaPlaylist,
+              onTentarDeNovo: _recarregar,
+            ),
           ],
         ),
       ),
@@ -153,6 +138,81 @@ class _HomeDados {
   const _HomeDados(this.playlists, this.novidades);
 }
 
+/// Saudação + ID do aparelho (toque copia) -- o ID fica sempre visível pra
+/// pessoa conseguir mandar de novo (ex: pra liberar outra playlist) sem
+/// precisar desinstalar e reinstalar.
+class _Cabecalho extends StatelessWidget {
+  final String? appId;
+  final VoidCallback onCopiar;
+
+  const _Cabecalho({required this.appId, required this.onCopiar});
+
+  String get _saudacao {
+    final hora = DateTime.now().hour;
+    if (hora < 12) return 'Bom dia';
+    if (hora < 18) return 'Boa tarde';
+    return 'Boa noite';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final id = appId;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            _saudacao,
+            style: const TextStyle(
+              color: AppTheme.textPrimary,
+              fontSize: 28,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 2),
+          const Text(
+            'O que vamos ouvir hoje?',
+            style: TextStyle(color: AppTheme.textSecondary, fontSize: 14),
+          ),
+          if (id != null) ...[
+            const SizedBox(height: 12),
+            InkWell(
+              borderRadius: BorderRadius.circular(20),
+              onTap: onCopiar,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: AppTheme.surface,
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: AppTheme.surfaceHigh),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.badge_outlined, size: 16, color: AppTheme.accent),
+                    const SizedBox(width: 6),
+                    Text(
+                      'ID: $id',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: AppTheme.textSecondary,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    const Icon(Icons.copy, size: 13, color: AppTheme.textSecondary),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
 class _TituloSecao extends StatelessWidget {
   final String texto;
 
@@ -161,12 +221,12 @@ class _TituloSecao extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 20, 16, 8),
+      padding: const EdgeInsets.fromLTRB(16, 24, 16, 12),
       child: Text(
         texto,
         style: const TextStyle(
           color: AppTheme.textPrimary,
-          fontSize: 18,
+          fontSize: 20,
           fontWeight: FontWeight.bold,
         ),
       ),
@@ -174,6 +234,8 @@ class _TituloSecao extends StatelessWidget {
   }
 }
 
+/// Card grande com a faixa que está tocando (ou pausada): capa, título,
+/// play/pause e uma barrinha de progresso. Toque abre o player.
 class _ContinuarOuvindo extends StatelessWidget {
   const _ContinuarOuvindo();
 
@@ -183,57 +245,139 @@ class _ContinuarOuvindo extends StatelessWidget {
     final faixa = player.faixaAtual;
     if (faixa == null) return const SizedBox.shrink();
 
+    final capaUrl = faixa.capaUrl(AppConstants.driveApiKey);
+    const capaPadrao = CapaPlaceholder(semente: 'sonora', tamanhoIcone: 26);
+
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(10),
-        onTap: () {
-          Navigator.of(context).push(
-            MaterialPageRoute(builder: (_) => const PlayerScreen()),
-          );
-        },
-        child: Container(
-          padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(
-            color: AppTheme.surface,
-            borderRadius: BorderRadius.circular(10),
-          ),
-          child: Row(
-            children: [
-              Container(
-                width: 44,
-                height: 44,
-                decoration: BoxDecoration(
-                  color: AppTheme.surfaceHigh,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: const Icon(Icons.music_note, color: AppTheme.accent),
+      padding: const EdgeInsets.fromLTRB(16, 20, 16, 0),
+      child: Material(
+        color: AppTheme.surface,
+        borderRadius: BorderRadius.circular(16),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: () {
+            Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const PlayerScreen()),
+            );
+          },
+          child: Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [
+                  AppTheme.accent.withValues(alpha: 0.16),
+                  AppTheme.surface,
+                ],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+            ),
+            child: Column(
+              children: [
+                Row(
                   children: [
-                    const Text(
-                      'Continuar ouvindo',
-                      style: TextStyle(color: AppTheme.textSecondary, fontSize: 12),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(12),
+                      child: SizedBox(
+                        width: 64,
+                        height: 64,
+                        child: capaUrl != null
+                            ? CachedNetworkImage(
+                                imageUrl: capaUrl,
+                                fit: BoxFit.cover,
+                                memCacheWidth: 160,
+                                placeholder: (context, url) => capaPadrao,
+                                errorWidget: (context, url, error) => capaPadrao,
+                              )
+                            : capaPadrao,
+                      ),
                     ),
-                    const SizedBox(height: 2),
-                    Text(
-                      faixa.displayTitle,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(color: AppTheme.textPrimary),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'CONTINUAR OUVINDO',
+                            style: TextStyle(
+                              color: AppTheme.accent,
+                              fontSize: 10,
+                              fontWeight: FontWeight.w600,
+                              letterSpacing: 1,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            faixa.displayTitle,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: AppTheme.textPrimary,
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          if (faixa.albumNome.isNotEmpty)
+                            Text(
+                              faixa.albumNome,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: AppTheme.textSecondary,
+                                fontSize: 12,
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Material(
+                      color: AppTheme.accent,
+                      shape: const CircleBorder(),
+                      child: InkWell(
+                        customBorder: const CircleBorder(),
+                        onTap: () {
+                          HapticFeedback.lightImpact();
+                          player.alternarPlayPause();
+                        },
+                        child: SizedBox(
+                          width: 46,
+                          height: 46,
+                          child: Icon(
+                            player.tocando
+                                ? Icons.pause_rounded
+                                : Icons.play_arrow_rounded,
+                            color: Colors.black,
+                            size: 30,
+                          ),
+                        ),
+                      ),
                     ),
                   ],
                 ),
-              ),
-              Icon(
-                player.tocando ? Icons.pause_circle_filled : Icons.play_circle_filled,
-                color: AppTheme.accent,
-                size: 32,
-              ),
-            ],
+                const SizedBox(height: 12),
+                StreamBuilder<Duration>(
+                  stream: player.posicaoStream,
+                  builder: (context, snapshot) {
+                    final posicao = snapshot.data ?? Duration.zero;
+                    final duracao = player.duracao;
+                    final progresso = duracao.inMilliseconds > 0
+                        ? (posicao.inMilliseconds / duracao.inMilliseconds)
+                            .clamp(0.0, 1.0)
+                        : 0.0;
+                    return ClipRRect(
+                      borderRadius: BorderRadius.circular(2),
+                      child: LinearProgressIndicator(
+                        value: progresso,
+                        minHeight: 3,
+                        backgroundColor: Colors.white12,
+                        valueColor: const AlwaysStoppedAnimation(AppTheme.accent),
+                      ),
+                    );
+                  },
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -242,52 +386,50 @@ class _ContinuarOuvindo extends StatelessWidget {
 }
 
 /// Lista as playlists curadas pra este App_ID -- cards grandes,
-/// verticais (diferente da fileira horizontal de álbuns que existia
-/// antes), já que agora são o conteúdo principal da Home, não uma seção
-/// secundária.
+/// verticais, já que agora são o conteúdo principal da Home.
 class _SecaoPlaylists extends StatelessWidget {
   final Future<_HomeDados> future;
   final VoidCallback onVoltar;
+  final VoidCallback onTentarDeNovo;
 
-  const _SecaoPlaylists({required this.future, required this.onVoltar});
+  const _SecaoPlaylists({
+    required this.future,
+    required this.onVoltar,
+    required this.onTentarDeNovo,
+  });
 
   @override
   Widget build(BuildContext context) {
     return FutureBuilder<_HomeDados>(
       future: future,
       builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
+        // Só mostra o esqueleto na primeira carga -- ao atualizar (puxar
+        // pra baixo ou voltar de uma playlist) continua mostrando a lista.
+        if (snapshot.connectionState == ConnectionState.waiting && !snapshot.hasData) {
           return const Padding(
-            padding: EdgeInsets.fromLTRB(16, 40, 16, 0),
-            child: Center(child: CircularProgressIndicator(color: AppTheme.accent)),
+            padding: EdgeInsets.only(top: 24),
+            child: SkeletonPlaylists(),
           );
         }
 
-        if (snapshot.hasError) {
-          return const Padding(
-            padding: EdgeInsets.fromLTRB(24, 40, 24, 0),
-            child: Center(
-              child: Text(
-                'Não foi possível carregar suas playlists.\nPuxe pra baixo pra tentar de novo.',
-                textAlign: TextAlign.center,
-                style: TextStyle(color: AppTheme.textSecondary),
-              ),
-            ),
+        if (snapshot.hasError && !snapshot.hasData) {
+          return EstadoVazio(
+            icone: Icons.wifi_off_rounded,
+            titulo: 'Não foi possível carregar',
+            mensagem:
+                'Verifique sua conexão. Sem internet, só abre o que já foi carregado antes.',
+            rotuloAcao: 'Tentar de novo',
+            aoAcionar: onTentarDeNovo,
           );
         }
 
         final dados = snapshot.data;
         final playlists = dados?.playlists ?? [];
         if (playlists.isEmpty) {
-          return const Padding(
-            padding: EdgeInsets.fromLTRB(24, 40, 24, 0),
-            child: Center(
-              child: Text(
-                'Nenhuma playlist ainda.\nPeça pra liberarem uma playlist pra você.',
-                textAlign: TextAlign.center,
-                style: TextStyle(color: AppTheme.textSecondary),
-              ),
-            ),
+          return const EstadoVazio(
+            icone: Icons.queue_music,
+            titulo: 'Nenhuma playlist ainda',
+            mensagem: 'Envie o seu ID (acima) pra liberarem uma playlist pra você.',
           );
         }
 
@@ -295,13 +437,15 @@ class _SecaoPlaylists extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const _TituloSecao('Suas playlists'),
-            ...playlists.map(
-              (p) => _PlaylistCard(
-                playlist: p,
-                novidade: dados?.novidades[p.id],
-                onVoltar: onVoltar,
+            for (var i = 0; i < playlists.length; i++)
+              Aparece(
+                indice: i,
+                child: _PlaylistCard(
+                  playlist: playlists[i],
+                  novidade: dados?.novidades[playlists[i].id],
+                  onVoltar: onVoltar,
+                ),
               ),
-            ),
           ],
         );
       },
@@ -324,76 +468,92 @@ class _PlaylistCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final capaUrl = playlist.capaUrl(AppConstants.driveApiKey);
     final novidade = this.novidade;
+    final offline = context.watch<OfflinePlaylistService>();
+    final offlineAtivo = offline.estaAtiva(playlist.id);
+    final offlineCompleto = offline.completa(playlist.id);
+    final capaPadrao = CapaPlaceholder(semente: playlist.nome);
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(10),
-        onTap: () {
-          Navigator.of(context).push(
-            MaterialPageRoute(
-              builder: (_) =>
-                  PlaylistScreen(playlistId: playlist.id, nome: playlist.nome),
-            ),
-          ).then((_) => onVoltar());
-        },
-        child: Container(
-          padding: const EdgeInsets.all(10),
-          decoration: BoxDecoration(
-            color: AppTheme.surface,
-            borderRadius: BorderRadius.circular(10),
-          ),
-          child: Row(
-            children: [
-              ClipRRect(
-                borderRadius: BorderRadius.circular(8),
-                child: SizedBox(
-                  width: 56,
-                  height: 56,
-                  child: capaUrl != null
-                      ? CachedNetworkImage(
-                          imageUrl: capaUrl,
-                          fit: BoxFit.cover,
-                          memCacheWidth: 160,
-                          placeholder: (context, url) => const _CapaPlaylistPlaceholder(),
-                          errorWidget: (context, url, error) =>
-                              const _CapaPlaylistPlaceholder(),
-                        )
-                      : const _CapaPlaylistPlaceholder(),
+      child: Material(
+        color: AppTheme.surface,
+        borderRadius: BorderRadius.circular(16),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: () {
+            HapticFeedback.selectionClick();
+            Navigator.of(context)
+                .push(
+                  MaterialPageRoute(
+                    builder: (_) =>
+                        PlaylistScreen(playlistId: playlist.id, nome: playlist.nome),
+                  ),
+                )
+                .then((_) => onVoltar());
+          },
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Row(
+              children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: SizedBox(
+                    width: 72,
+                    height: 72,
+                    child: capaUrl != null
+                        ? CachedNetworkImage(
+                            imageUrl: capaUrl,
+                            fit: BoxFit.cover,
+                            memCacheWidth: 200,
+                            placeholder: (context, url) => capaPadrao,
+                            errorWidget: (context, url, error) => capaPadrao,
+                          )
+                        : capaPadrao,
+                  ),
                 ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      playlist.nome,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: AppTheme.textPrimary,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Row(
-                      children: [
-                        Text(
-                          '${playlist.totalFaixas} faixa${playlist.totalFaixas == 1 ? '' : 's'}',
-                          style: const TextStyle(color: AppTheme.textSecondary, fontSize: 12),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        playlist.nome,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: AppTheme.textPrimary,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
                         ),
-                        if (novidade != null) ...[
-                          const SizedBox(width: 8),
-                          _SeloNovidade(novidade: novidade),
+                      ),
+                      const SizedBox(height: 6),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 4,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [
+                          Text(
+                            '${playlist.totalFaixas} faixa${playlist.totalFaixas == 1 ? '' : 's'}',
+                            style: const TextStyle(
+                              color: AppTheme.textSecondary,
+                              fontSize: 12,
+                            ),
+                          ),
+                          if (novidade != null) _SeloNovidade(novidade: novidade),
+                          if (offlineAtivo)
+                            Icon(
+                              offlineCompleto ? Icons.offline_pin : Icons.downloading,
+                              size: 16,
+                              color: AppTheme.accent,
+                            ),
                         ],
-                      ],
-                    ),
-                  ],
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-              const Icon(Icons.chevron_right, color: AppTheme.textSecondary),
-            ],
+                const Icon(Icons.chevron_right, color: AppTheme.textSecondary),
+              ],
+            ),
           ),
         ),
       ),
@@ -427,20 +587,6 @@ class _SeloNovidade extends StatelessWidget {
           fontSize: 11,
           fontWeight: FontWeight.bold,
         ),
-      ),
-    );
-  }
-}
-
-class _CapaPlaylistPlaceholder extends StatelessWidget {
-  const _CapaPlaylistPlaceholder();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      color: AppTheme.surfaceHigh,
-      child: const Center(
-        child: Icon(Icons.queue_music, color: AppTheme.accent, size: 24),
       ),
     );
   }

@@ -58,6 +58,13 @@ class AppTheme {
           padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 14),
         ),
       ),
+      // SnackBars flutuantes e arredondados (ficam acima do mini-player).
+      snackBarTheme: SnackBarThemeData(
+        behavior: SnackBarBehavior.floating,
+        backgroundColor: surfaceHigh,
+        contentTextStyle: GoogleFonts.poppins(color: textPrimary, fontSize: 13),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      ),
       useMaterial3: true,
     );
   }

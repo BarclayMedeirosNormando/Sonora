@@ -10,6 +10,7 @@ import 'screens/validation_screen.dart';
 import 'services/download_service.dart';
 import 'services/favoritos_service.dart';
 import 'services/historico_service.dart';
+import 'services/offline_playlist_service.dart';
 import 'services/player_service.dart';
 
 void main() async {
@@ -69,10 +70,15 @@ void main() async {
   final downloadService = DownloadService();
   await downloadService.inicializar();
 
+  // Modo offline por playlist (baixa tudo e mantém em dia, só no Wi-Fi).
+  final offlineService = OfflinePlaylistService(downloadService);
+  await offlineService.inicializar();
+
   runApp(
     MultiProvider(
       providers: [
         ChangeNotifierProvider.value(value: downloadService),
+        ChangeNotifierProvider.value(value: offlineService),
         ChangeNotifierProvider(
           create: (_) => PlayerService(downloadService: downloadService),
         ),

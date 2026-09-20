@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../core/constants.dart';
 import '../models/pasta_conteudo.dart';
@@ -124,37 +125,57 @@ class ApiService {
   /// GET /api/playlists no backend-cloudrun/server.js — cada playlist só
   /// aparece pra quem está na lista de appIds definida na curadoria).
   static Future<List<PlaylistResumo>> obterPlaylists(String appId) async {
-    return _comRetentativas(() async {
-      final uri = Uri.parse('${AppConstants.cloudRunBaseUrl}/api/playlists').replace(
-        queryParameters: {'appId': appId},
-      );
-      final response = await http.get(uri);
-      if (response.statusCode != 200) {
-        throw Exception('Falha ao carregar playlists (HTTP ${response.statusCode})');
-      }
-      final body = jsonDecode(utf8.decode(response.bodyBytes)) as Map<String, dynamic>;
-      final lista = body['playlists'] as List<dynamic>? ?? [];
-      return lista
-          .map((e) => PlaylistResumo.fromJson(e as Map<String, dynamic>))
-          .toList();
-    });
+    final uri = Uri.parse('${AppConstants.cloudRunBaseUrl}/api/playlists').replace(
+      queryParameters: {'appId': appId},
+    );
+    final corpo = await _obterCorpoComCache(uri, 'sonora_cache_playlists');
+    final body = jsonDecode(corpo) as Map<String, dynamic>;
+    final lista = body['playlists'] as List<dynamic>? ?? [];
+    return lista
+        .map((e) => PlaylistResumo.fromJson(e as Map<String, dynamic>))
+        .toList();
   }
 
   /// Busca uma playlist específica, com a lista de faixas já resolvida.
   /// Recusa (HTTP 403) se o appId não estiver entre os alvos da playlist.
   static Future<Playlist> obterPlaylist(String id, String appId) async {
-    return _comRetentativas(() async {
-      final uri =
-          Uri.parse('${AppConstants.cloudRunBaseUrl}/api/playlists/$id').replace(
-        queryParameters: {'appId': appId},
-      );
-      final response = await http.get(uri);
-      if (response.statusCode != 200) {
-        throw Exception('Falha ao carregar a playlist (HTTP ${response.statusCode})');
-      }
-      final body = jsonDecode(utf8.decode(response.bodyBytes)) as Map<String, dynamic>;
-      return Playlist.fromJson(body);
-    });
+    final uri =
+        Uri.parse('${AppConstants.cloudRunBaseUrl}/api/playlists/$id').replace(
+      queryParameters: {'appId': appId},
+    );
+    final corpo = await _obterCorpoComCache(uri, 'sonora_cache_playlist_$id');
+    return Playlist.fromJson(jsonDecode(corpo) as Map<String, dynamic>);
+  }
+
+  /// GET com cópia local da resposta (modo offline): guarda o corpo da
+  /// última resposta boa e, se a rede falhar (sem internet, timeout,
+  /// backend fora do ar), devolve essa cópia -- assim a Home e as
+  /// playlists abrem sem internet. Já 403/404 (acesso removido ou
+  /// playlist apagada) NÃO usam a cópia: apagam ela e propagam o erro,
+  /// pra não continuar mostrando o que a pessoa não pode mais ver.
+  static Future<String> _obterCorpoComCache(Uri uri, String chaveCache) async {
+    final prefs = await SharedPreferences.getInstance();
+    try {
+      final corpo = await _comRetentativas(() async {
+        final response = await http.get(uri).timeout(const Duration(seconds: 10));
+        if (response.statusCode == 403 || response.statusCode == 404) {
+          throw _AcessoNegado(response.statusCode);
+        }
+        if (response.statusCode != 200) {
+          throw Exception('Falha ao carregar (HTTP ${response.statusCode})');
+        }
+        return utf8.decode(response.bodyBytes);
+      });
+      await prefs.setString(chaveCache, corpo);
+      return corpo;
+    } on _AcessoNegado {
+      await prefs.remove(chaveCache);
+      rethrow;
+    } catch (_) {
+      final guardado = prefs.getString(chaveCache);
+      if (guardado != null) return guardado;
+      rethrow;
+    }
   }
 
   /// Tenta [tentativa] até 3 vezes no total, com uma pequena espera entre
@@ -174,4 +195,15 @@ class ApiService {
     }
     return tentativa();
   }
+}
+
+/// Backend recusou o acesso (403) ou não achou o recurso (404) -- diferente
+/// de falha de rede, não deve cair na cópia local (ver _obterCorpoComCache).
+class _AcessoNegado implements Exception {
+  final int status;
+
+  const _AcessoNegado(this.status);
+
+  @override
+  String toString() => 'Acesso negado (HTTP $status)';
 }
