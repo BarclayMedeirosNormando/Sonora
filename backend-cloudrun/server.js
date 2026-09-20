@@ -110,7 +110,7 @@ const limiteValidar = rateLimit({
 });
 const limitePainel = rateLimit({
   windowMs: 5 * 60 * 1000,
-  max: 60, // cobre o painel abrindo varias abas/secoes sem travar o Barclay
+  max: 200, // a página /criar faz várias chamadas seguidas (curadoria) sem travar o Barclay
   standardHeaders: true,
   legacyHeaders: false,
   message: { erro: 'Muitas tentativas. Aguarde alguns minutos.' },
@@ -1157,6 +1157,52 @@ app.post('/api/admin/playlists/:id/faixas', limitePainel, async (req, res) => {
   }
 });
 
+/**
+ * Adiciona várias faixas de uma vez (ex.: "álbum inteiro") — body
+ * { faixas: [{ fileId, nome, albumId, albumNome, capaId }, ...] } (até 500).
+ * Só entram as que ainda não estão na playlist. Uma única chamada em vez
+ * de N, pra não estourar o limite de requisições da página de curadoria.
+ */
+app.post('/api/admin/playlists/:id/faixas-lote', limitePainel, async (req, res) => {
+  if (!chavePainelValida(req)) return res.status(403).json({ erro: 'Chave ausente ou incorreta.' });
+  const entrada = Array.isArray(req.body && req.body.faixas) ? req.body.faixas : [];
+  if (!entrada.length) return res.status(400).json({ erro: 'Nenhuma faixa informada.' });
+  if (entrada.length > 500) return res.status(400).json({ erro: 'Máximo de 500 faixas por vez.' });
+  try {
+    const ref = getFirestore().collection('playlists').doc(req.params.id);
+    const doc = await ref.get();
+    if (!doc.exists) return res.status(404).json({ erro: 'Playlist não encontrada.' });
+    const dados = doc.data();
+    const faixas = dados.faixas || [];
+    const existentes = new Set(faixas.map((f) => f.fileId));
+    let adicionadas = 0;
+    let jaExistiam = 0;
+    let primeiraCapa = null;
+    for (const f of entrada) {
+      if (!f || !f.fileId || !f.nome) continue;
+      const fileId = String(f.fileId);
+      if (existentes.has(fileId)) { jaExistiam++; continue; }
+      existentes.add(fileId);
+      faixas.push({
+        fileId,
+        nome: String(f.nome),
+        albumId: f.albumId ? String(f.albumId) : null,
+        albumNome: f.albumNome ? String(f.albumNome) : '',
+        capaId: f.capaId ? String(f.capaId) : null,
+      });
+      if (!primeiraCapa && f.capaId) primeiraCapa = String(f.capaId);
+      adicionadas++;
+    }
+    const atualizacao = { faixas, atualizadoEm: new Date().toISOString() };
+    if (!dados.capaId && primeiraCapa) atualizacao.capaId = primeiraCapa;
+    if (adicionadas > 0) await ref.update(atualizacao);
+    return res.json({ ok: true, adicionadas, jaExistiam, playlist: { id: doc.id, ...dados, ...atualizacao } });
+  } catch (erro) {
+    console.error('Erro em POST /api/admin/playlists/:id/faixas-lote:', erro);
+    return res.status(500).json({ erro: 'Falha ao adicionar faixas.' });
+  }
+});
+
 app.delete('/api/admin/playlists/:id/faixas/:fileId', limitePainel, async (req, res) => {
   if (!chavePainelValida(req)) return res.status(403).json({ erro: 'Chave ausente ou incorreta.' });
   try {
@@ -1283,6 +1329,34 @@ app.get('/api/admin/novidades', limitePainel, async (req, res) => {
   }
 });
 
+/** Marca vários álbuns como revisados de uma vez — body { albumIds: [...], status }. */
+app.post('/api/admin/vistos-lote', limitePainel, async (req, res) => {
+  if (!chavePainelValida(req)) return res.status(403).json({ erro: 'Chave ausente ou incorreta.' });
+  const ids = Array.isArray(req.body && req.body.albumIds)
+    ? [...new Set(req.body.albumIds.map(String).filter(Boolean))]
+    : [];
+  const status = req.body && req.body.status ? String(req.body.status) : 'ignorado';
+  if (!ids.length) return res.status(400).json({ erro: 'albumIds é obrigatório.' });
+  try {
+    const db = getFirestore();
+    for (let i = 0; i < ids.length; i += 400) {
+      const batch = db.batch();
+      for (const albumId of ids.slice(i, i + 400)) {
+        batch.set(db.collection('curadoria_vistos').doc(albumId), {
+          albumId,
+          status,
+          vistoEm: Firestore.FieldValue.serverTimestamp(),
+        });
+      }
+      await batch.commit();
+    }
+    return res.json({ ok: true, total: ids.length });
+  } catch (erro) {
+    console.error('Erro em /api/admin/vistos-lote:', erro);
+    return res.status(500).json({ erro: 'Falha ao marcar como revisados.' });
+  }
+});
+
 /** Marca um álbum como revisado (incluído numa playlist ou ignorado). */
 app.post('/api/admin/vistos', limitePainel, async (req, res) => {
   if (!chavePainelValida(req)) return res.status(403).json({ erro: 'Chave ausente ou incorreta.' });
@@ -1344,6 +1418,207 @@ app.get('/api/playlists/:id', limiteMidia, exigirAppIdLiberado, async (req, res)
     registrarAlerta('/api/playlists/:id', erro);
     return res.status(500).json({ erro: 'Falha ao carregar playlist.' });
   }
+});
+
+// ---- Cliente: cada pessoa monta as PRÓPRIAS playlists (página /minhaplaylist) ----
+//
+// As playlists do cliente ficam na mesma coleção `playlists`, com
+// appIds = [dono] e donoAppId = dono. Assim o app (GET /api/playlists) já
+// as mostra sem nenhuma mudança, e o painel /criar as enxerga também.
+// Autenticação: header X-App-Id liberado na planilha (mesma regra do
+// /cache e /midia). O cliente só mexe em playlists onde donoAppId == ele —
+// as curadas por você (sem donoAppId) são intocáveis por aqui.
+
+const MAX_PLAYLISTS_CLIENTE = 30;
+const MAX_FAIXAS_CLIENTE = 1000;
+const limiteCliente = rateLimit({
+  windowMs: 5 * 60 * 1000,
+  max: 200,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { erro: 'Muitas requisições. Aguarde um pouco.' },
+});
+
+async function exigirCliente(req, res, next) {
+  const appId = String(req.get('X-App-Id') || '').trim();
+  if (!appId) return res.status(401).json({ erro: 'App_ID ausente.' });
+  try {
+    const liberados = await obterLiberados();
+    if (!liberados.has(appId)) return res.status(403).json({ erro: 'App_ID não liberado.' });
+    req.appIdCliente = appId;
+    next();
+  } catch (erro) {
+    console.error('Erro ao checar liberação do cliente:', erro);
+    return res.status(503).json({ erro: 'Falha ao checar liberação. Tente novamente.' });
+  }
+}
+
+/** Carrega a playlist e garante que é do cliente; responde o erro e devolve null se não for. */
+async function playlistDoCliente(req, res) {
+  const ref = getFirestore().collection('playlists').doc(req.params.id);
+  const doc = await ref.get();
+  if (!doc.exists) { res.status(404).json({ erro: 'Playlist não encontrada.' }); return null; }
+  if (doc.data().donoAppId !== req.appIdCliente) {
+    res.status(403).json({ erro: 'Essa playlist não é sua.' });
+    return null;
+  }
+  return { ref, doc, dados: doc.data() };
+}
+
+/** Confirma o App_ID (usado no login da página). */
+app.get('/api/cliente/eu', limiteCliente, exigirCliente, (req, res) => res.json({ ok: true }));
+
+app.get('/api/cliente/playlists', limiteCliente, exigirCliente, async (req, res) => {
+  try {
+    const snap = await getFirestore().collection('playlists').where('donoAppId', '==', req.appIdCliente).get();
+    const playlists = snap.docs
+      .map((d) => ({ id: d.id, ...d.data() }))
+      .sort((a, b) => String(b.criadoEm || '').localeCompare(String(a.criadoEm || '')));
+    return res.json({ playlists });
+  } catch (erro) {
+    console.error('Erro em GET /api/cliente/playlists:', erro);
+    return res.status(500).json({ erro: 'Falha ao carregar suas playlists.' });
+  }
+});
+
+app.post('/api/cliente/playlists', limiteCliente, exigirCliente, async (req, res) => {
+  const nome = String((req.body && req.body.nome) || '').trim().slice(0, 60);
+  if (!nome) return res.status(400).json({ erro: 'Dê um nome para a playlist.' });
+  try {
+    const col = getFirestore().collection('playlists');
+    const existentes = await col.where('donoAppId', '==', req.appIdCliente).get();
+    if (existentes.size >= MAX_PLAYLISTS_CLIENTE) {
+      return res.status(400).json({ erro: `Limite de ${MAX_PLAYLISTS_CLIENTE} playlists atingido.` });
+    }
+    const agora = new Date().toISOString();
+    const ref = await col.add({
+      nome,
+      capaId: null,
+      faixas: [],
+      appIds: [req.appIdCliente],
+      donoAppId: req.appIdCliente,
+      criadoEm: agora,
+      atualizadoEm: agora,
+    });
+    return res.json({ id: ref.id });
+  } catch (erro) {
+    console.error('Erro em POST /api/cliente/playlists:', erro);
+    return res.status(500).json({ erro: 'Falha ao criar a playlist.' });
+  }
+});
+
+app.put('/api/cliente/playlists/:id', limiteCliente, exigirCliente, async (req, res) => {
+  const nome = String((req.body && req.body.nome) || '').trim().slice(0, 60);
+  if (!nome) return res.status(400).json({ erro: 'Dê um nome para a playlist.' });
+  try {
+    const p = await playlistDoCliente(req, res);
+    if (!p) return;
+    await p.ref.update({ nome, atualizadoEm: new Date().toISOString() });
+    return res.json({ ok: true });
+  } catch (erro) {
+    console.error('Erro em PUT /api/cliente/playlists/:id:', erro);
+    return res.status(500).json({ erro: 'Falha ao renomear.' });
+  }
+});
+
+app.delete('/api/cliente/playlists/:id', limiteCliente, exigirCliente, async (req, res) => {
+  try {
+    const p = await playlistDoCliente(req, res);
+    if (!p) return;
+    await p.ref.delete();
+    return res.json({ ok: true });
+  } catch (erro) {
+    console.error('Erro em DELETE /api/cliente/playlists/:id:', erro);
+    return res.status(500).json({ erro: 'Falha ao apagar.' });
+  }
+});
+
+app.post('/api/cliente/playlists/:id/faixas-lote', limiteCliente, exigirCliente, async (req, res) => {
+  const entrada = Array.isArray(req.body && req.body.faixas) ? req.body.faixas : [];
+  if (!entrada.length) return res.status(400).json({ erro: 'Nenhuma faixa informada.' });
+  if (entrada.length > 500) return res.status(400).json({ erro: 'Máximo de 500 faixas por vez.' });
+  try {
+    const p = await playlistDoCliente(req, res);
+    if (!p) return;
+    const faixas = p.dados.faixas || [];
+    const existentes = new Set(faixas.map((f) => f.fileId));
+    let adicionadas = 0;
+    let jaExistiam = 0;
+    let cheia = false;
+    let primeiraCapa = null;
+    for (const f of entrada) {
+      if (!f || !f.fileId || !f.nome) continue;
+      const fileId = String(f.fileId);
+      if (existentes.has(fileId)) { jaExistiam++; continue; }
+      if (faixas.length >= MAX_FAIXAS_CLIENTE) { cheia = true; break; }
+      existentes.add(fileId);
+      faixas.push({
+        fileId,
+        nome: String(f.nome).slice(0, 300),
+        albumId: f.albumId ? String(f.albumId) : null,
+        albumNome: f.albumNome ? String(f.albumNome).slice(0, 300) : '',
+        capaId: f.capaId ? String(f.capaId) : null,
+      });
+      if (!primeiraCapa && f.capaId) primeiraCapa = String(f.capaId);
+      adicionadas++;
+    }
+    const atualizacao = { faixas, atualizadoEm: new Date().toISOString() };
+    if (!p.dados.capaId && primeiraCapa) atualizacao.capaId = primeiraCapa;
+    if (adicionadas > 0) await p.ref.update(atualizacao);
+    return res.json({
+      ok: true, adicionadas, jaExistiam, cheia,
+      playlist: { id: p.doc.id, ...p.dados, ...atualizacao },
+    });
+  } catch (erro) {
+    console.error('Erro em POST /api/cliente/playlists/:id/faixas-lote:', erro);
+    return res.status(500).json({ erro: 'Falha ao adicionar faixas.' });
+  }
+});
+
+app.delete('/api/cliente/playlists/:id/faixas/:fileId', limiteCliente, exigirCliente, async (req, res) => {
+  try {
+    const p = await playlistDoCliente(req, res);
+    if (!p) return;
+    const faixas = (p.dados.faixas || []).filter((f) => f.fileId !== req.params.fileId);
+    await p.ref.update({ faixas, atualizadoEm: new Date().toISOString() });
+    return res.json({ ok: true });
+  } catch (erro) {
+    console.error('Erro em DELETE /api/cliente/playlists/:id/faixas/:fileId:', erro);
+    return res.status(500).json({ erro: 'Falha ao remover faixa.' });
+  }
+});
+
+app.put('/api/cliente/playlists/:id/reordenar', limiteCliente, exigirCliente, async (req, res) => {
+  const ordem = (req.body && req.body.ordem) || [];
+  if (!Array.isArray(ordem) || !ordem.length) return res.status(400).json({ erro: 'ordem é obrigatória.' });
+  try {
+    const p = await playlistDoCliente(req, res);
+    if (!p) return;
+    const porId = new Map((p.dados.faixas || []).map((f) => [f.fileId, f]));
+    const ordenadas = ordem.map((fid) => porId.get(fid)).filter(Boolean);
+    // Faixas que não vieram na ordem (adicionadas em outra aba) vão pro fim, sem sumir.
+    const citadas = new Set(ordenadas.map((f) => f.fileId));
+    porId.forEach((f, fid) => { if (!citadas.has(fid)) ordenadas.push(f); });
+    await p.ref.update({ faixas: ordenadas, atualizadoEm: new Date().toISOString() });
+    return res.json({ ok: true });
+  } catch (erro) {
+    console.error('Erro em PUT /api/cliente/playlists/:id/reordenar:', erro);
+    return res.status(500).json({ erro: 'Falha ao reordenar.' });
+  }
+});
+
+/** Página pública onde o cliente monta as próprias playlists; entra com o App_ID. */
+app.get(['/minhaplaylist', '/minha'], limiteCliente, (_req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'minhaplaylist.html'));
+});
+
+/**
+ * Link curto e público da página de criar playlists (/criar). A página
+ * em si não expõe nada: ela pede a chave no login e só então chama as
+ * rotas /api/admin/*, que continuam protegidas por PAINEL_CHAVE.
+ */
+app.get(['/criar', '/criarplaylist'], limitePainel, (_req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'curadoria.html'));
 });
 
 /**

@@ -4,6 +4,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../core/constants.dart';
 import '../core/theme.dart';
@@ -31,13 +32,17 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
+class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   late Future<_HomeDados> _playlistsFuture;
   String? _appId;
+  // Marca que a pessoa foi montar playlist no navegador -- ao voltar pro
+  // app, a Home recarrega sozinha pra mostrar o que ela criou.
+  bool _abriuCriador = false;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _playlistsFuture = _carregarPlaylists();
     // Carregado separado da lista de playlists -- o App_ID já está em
     // cache local (DeviceIdService), então isso resolve quase instantâneo
@@ -45,6 +50,43 @@ class _HomeScreenState extends State<HomeScreen> {
     DeviceIdService.getOrCreateDeviceId().then((id) {
       if (mounted) setState(() => _appId = id);
     });
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && _abriuCriador) {
+      _abriuCriador = false;
+      _recarregar();
+    }
+  }
+
+  /// Abre a página web onde a pessoa monta as próprias playlists, já com o
+  /// ID deste aparelho (a página guarda o ID e limpa o endereço).
+  Future<void> _abrirCriador() async {
+    final id = _appId ?? await DeviceIdService.getOrCreateDeviceId();
+    final url = Uri.parse(
+      '${AppConstants.cloudRunBaseUrl}/minhaplaylist?id=${Uri.encodeQueryComponent(id)}',
+    );
+    var abriu = false;
+    try {
+      abriu = await launchUrl(url, mode: LaunchMode.externalApplication);
+    } catch (_) {
+      abriu = false;
+    }
+    if (!mounted) return;
+    if (abriu) {
+      _abriuCriador = true;
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Não deu pra abrir o navegador.')),
+      );
+    }
   }
 
   Future<_HomeDados> _carregarPlaylists() async {
@@ -116,12 +158,13 @@ class _HomeScreenState extends State<HomeScreen> {
           physics: const AlwaysScrollableScrollPhysics(),
           padding: const EdgeInsets.only(bottom: 24),
           children: [
-            _Cabecalho(appId: _appId, onCopiar: _copiarAppId),
+            _Cabecalho(appId: _appId, onCopiar: _copiarAppId, onCriar: _abrirCriador),
             const _ContinuarOuvindo(),
             _SecaoPlaylists(
               future: _playlistsFuture,
               onVoltar: _aoVoltarDaPlaylist,
               onTentarDeNovo: _recarregar,
+              onCriar: _abrirCriador,
             ),
           ],
         ),
@@ -144,8 +187,13 @@ class _HomeDados {
 class _Cabecalho extends StatelessWidget {
   final String? appId;
   final VoidCallback onCopiar;
+  final VoidCallback onCriar;
 
-  const _Cabecalho({required this.appId, required this.onCopiar});
+  const _Cabecalho({
+    required this.appId,
+    required this.onCopiar,
+    required this.onCriar,
+  });
 
   String get _saudacao {
     final hora = DateTime.now().hour;
@@ -177,34 +225,68 @@ class _Cabecalho extends StatelessWidget {
           ),
           if (id != null) ...[
             const SizedBox(height: 12),
-            InkWell(
-              borderRadius: BorderRadius.circular(20),
-              onTap: onCopiar,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                decoration: BoxDecoration(
-                  color: AppTheme.surface,
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                InkWell(
                   borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: AppTheme.surfaceHigh),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(Icons.badge_outlined, size: 16, color: AppTheme.accent),
-                    const SizedBox(width: 6),
-                    Text(
-                      'ID: $id',
-                      style: const TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                        color: AppTheme.textSecondary,
-                      ),
+                  onTap: onCopiar,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: AppTheme.surface,
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: AppTheme.surfaceHigh),
                     ),
-                    const SizedBox(width: 6),
-                    const Icon(Icons.copy, size: 13, color: AppTheme.textSecondary),
-                  ],
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.badge_outlined, size: 16, color: AppTheme.accent),
+                        const SizedBox(width: 6),
+                        Text(
+                          'ID: $id',
+                          style: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: AppTheme.textSecondary,
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        const Icon(Icons.copy, size: 13, color: AppTheme.textSecondary),
+                      ],
+                    ),
+                  ),
                 ),
-              ),
+                InkWell(
+                  borderRadius: BorderRadius.circular(20),
+                  onTap: onCriar,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: AppTheme.accent.withValues(alpha: 0.14),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: AppTheme.accent.withValues(alpha: 0.5)),
+                    ),
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.add_circle_outline, size: 16, color: AppTheme.accent),
+                        SizedBox(width: 6),
+                        Text(
+                          'Criar minha playlist',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: AppTheme.accent,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
             ),
           ],
         ],
@@ -391,11 +473,13 @@ class _SecaoPlaylists extends StatelessWidget {
   final Future<_HomeDados> future;
   final VoidCallback onVoltar;
   final VoidCallback onTentarDeNovo;
+  final VoidCallback onCriar;
 
   const _SecaoPlaylists({
     required this.future,
     required this.onVoltar,
     required this.onTentarDeNovo,
+    required this.onCriar,
   });
 
   @override
@@ -426,10 +510,13 @@ class _SecaoPlaylists extends StatelessWidget {
         final dados = snapshot.data;
         final playlists = dados?.playlists ?? [];
         if (playlists.isEmpty) {
-          return const EstadoVazio(
+          return EstadoVazio(
             icone: Icons.queue_music,
             titulo: 'Nenhuma playlist ainda',
-            mensagem: 'Envie o seu ID (acima) pra liberarem uma playlist pra você.',
+            mensagem:
+                'Monte a sua, ou envie o seu ID (acima) pra liberarem uma playlist pra você.',
+            rotuloAcao: 'Criar minha playlist',
+            aoAcionar: onCriar,
           );
         }
 

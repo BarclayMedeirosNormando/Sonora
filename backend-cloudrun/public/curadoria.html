@@ -2,599 +2,984 @@
 <html lang="pt-BR">
 <head>
 <meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Sonora — Curadoria</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="theme-color" content="#121212" />
+<title>Sonora · Criar playlist</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet" />
 <style>
   :root {
-    color-scheme: light;
-    --surface-1:      #fcfcfb;
-    --page:           #f9f9f7;
-    --text-primary:   #0b0b0b;
-    --text-secondary: #52514e;
-    --text-muted:     #898781;
-    --grid:           #e1e0d9;
-    --border:         rgba(11,11,11,0.10);
-    --series-1:       #2a78d6;
-    --series-1-wash:  rgba(42,120,214,0.10);
-    --status-warning: #fab219;
-    --status-good:    #0ca30c;
-    --status-critical:#d03b3b;
+    --bg: #121212;
+    --surface: #181818;
+    --surface-2: #222222;
+    --surface-3: #2c2c2c;
+    --line: rgba(255,255,255,0.08);
+    --text: #ffffff;
+    --text-2: #b3b3b3;
+    --text-3: #7d7d7d;
+    --accent: #2fe6a7;
+    --accent-ink: #04140e;
+    --accent-wash: rgba(47,230,167,0.12);
+    --danger: #ff6b6b;
+    --danger-wash: rgba(255,107,107,0.12);
+    --radius: 12px;
+    --header-h: 58px;
+    --nav-h: 0px;
   }
-  @media (prefers-color-scheme: dark) {
-    :root:where(:not([data-theme="light"])) {
-      color-scheme: dark;
-      --surface-1:      #1a1a19;
-      --page:           #0d0d0d;
-      --text-primary:   #ffffff;
-      --text-secondary: #c3c2b7;
-      --text-muted:     #898781;
-      --grid:           #2c2c2a;
-      --border:         rgba(255,255,255,0.10);
-      --series-1:       #3987e5;
-      --series-1-wash:  rgba(57,135,229,0.14);
-    }
-  }
-  :root[data-theme="dark"] {
-    color-scheme: dark;
-    --surface-1:      #1a1a19;
-    --page:           #0d0d0d;
-    --text-primary:   #ffffff;
-    --text-secondary: #c3c2b7;
-    --text-muted:     #898781;
-    --grid:           #2c2c2a;
-    --border:         rgba(255,255,255,0.10);
-    --series-1:       #3987e5;
-    --series-1-wash:  rgba(57,135,229,0.14);
-  }
-
   * { box-sizing: border-box; }
-  body { margin: 0; background: var(--page); color: var(--text-primary);
-    font-family: system-ui, -apple-system, "Segoe UI", sans-serif; -webkit-font-smoothing: antialiased; }
-  .wrap { max-width: 1200px; margin: 0 auto; padding: 28px 20px 64px; }
+  html, body { height: 100%; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font-family: Poppins, system-ui, -apple-system, "Segoe UI", sans-serif;
+    font-size: 14px; -webkit-font-smoothing: antialiased; overflow: hidden;
+  }
+  button { font-family: inherit; }
+  [hidden] { display: none !important; }
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-thumb { background: var(--surface-3); border-radius: 8px; border: 2px solid var(--bg); }
+  ::-webkit-scrollbar-track { background: transparent; }
 
-  .banner { border-radius: 10px; padding: 10px 16px; font-size: 13px; margin-bottom: 24px; border: 1px solid var(--border); }
-  .banner.error { background: rgba(208,59,59,0.10); color: var(--status-critical); }
-  .banner.ok { background: rgba(12,163,12,0.10); color: var(--status-good); }
+  /* ---------- Cabeçalho ---------- */
+  .topo {
+    height: var(--header-h); display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    padding: 0 20px; border-bottom: 1px solid var(--line); background: var(--bg);
+  }
+  .marca { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
+  .marca h1 { margin: 0; font-size: 18px; font-weight: 700; letter-spacing: -0.2px; }
+  .marca h1 span { color: var(--accent); }
+  .marca small { color: var(--text-3); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .topo .btn { flex-shrink: 0; }
 
-  header.top { margin-bottom: 20px; display:flex; align-items:baseline; justify-content:space-between; gap:12px; flex-wrap:wrap; }
-  header.top h1 { font-size: 22px; font-weight: 650; margin: 0 0 4px; }
-  header.top p { margin: 0; color: var(--text-secondary); font-size: 14px; }
+  /* ---------- Layout ---------- */
+  .app {
+    display: grid; grid-template-columns: 270px minmax(0, 1fr) minmax(360px, 0.9fr);
+    height: calc(100vh - var(--header-h)); height: calc(100dvh - var(--header-h));
+  }
+  .painel { display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--line); }
+  .painel:last-child { border-right: none; }
+  .painel-topo { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 16px 16px 10px; }
+  .painel-topo h2 { margin: 0; font-size: 15px; font-weight: 600; }
+  .corpo { flex: 1; min-height: 0; overflow-y: auto; padding: 0 12px 24px; }
 
-  .tabs { display: flex; gap: 4px; margin-bottom: 22px; border-bottom: 1px solid var(--border); overflow-x: auto; }
-  .tab-btn { background: none; border: none; padding: 10px 16px; font-size: 13px; font-weight: 550;
-    color: var(--text-muted); cursor: pointer; border-bottom: 2px solid transparent; white-space: nowrap; font-family: inherit; }
-  .tab-btn:hover { color: var(--text-primary); }
-  .tab-btn.active { color: var(--text-primary); border-bottom-color: var(--series-1); }
-  .tab-panel[hidden] { display: none; }
+  /* ---------- Botões / campos ---------- */
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    background: var(--accent); color: var(--accent-ink); border: none; border-radius: 999px;
+    padding: 9px 18px; font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap;
+    transition: transform .08s ease, opacity .15s ease, background .15s ease;
+  }
+  .btn:hover { opacity: .9; } .btn:active { transform: scale(.97); }
+  .btn:disabled { opacity: .45; cursor: default; transform: none; }
+  .btn.sec { background: var(--surface-3); color: var(--text); }
+  .btn.sec:hover { background: #363636; opacity: 1; }
+  .btn.perigo { background: var(--danger-wash); color: var(--danger); }
+  .btn.pequeno { padding: 6px 13px; font-size: 12px; }
+  .ib {
+    background: none; border: none; color: var(--text-3); cursor: pointer; font-size: 14px; line-height: 1;
+    width: 30px; height: 30px; border-radius: 8px; display: inline-flex; align-items: center; justify-content: center;
+  }
+  .ib:hover:not(:disabled) { color: var(--text); background: var(--surface-3); }
+  .ib:disabled { opacity: .25; cursor: default; }
+  .ib.play.tocando { color: var(--accent); }
+  input[type="text"], input[type="search"], input[type="password"] {
+    width: 100%; background: var(--surface-2); color: var(--text); border: 1px solid transparent;
+    border-radius: 10px; padding: 10px 12px; font-size: 14px; font-family: inherit;
+  }
+  input:focus { outline: none; border-color: var(--accent); background: var(--surface-3); }
+  input::placeholder { color: var(--text-3); }
+  .vazio { color: var(--text-3); text-align: center; padding: 28px 12px; font-size: 13px; line-height: 1.5; }
+  .dica { color: var(--text-3); font-size: 12px; margin: 8px 2px 0; }
 
-  .card { background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px; padding: 16px 18px; }
-  .card h3 { font-size: 14px; font-weight: 650; margin: 0 0 10px; }
-  .sub { font-size: 12px; color: var(--text-muted); margin: 0 0 12px; }
+  /* ---------- Capas ---------- */
+  .capa {
+    position: relative; display: inline-block; flex-shrink: 0; overflow: hidden; border-radius: 8px; vertical-align: middle;
+    background: linear-gradient(135deg, hsl(var(--h) 45% 38%), hsl(calc(var(--h) + 40) 50% 20%));
+  }
+  .capa i { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-style: normal; color: rgba(255,255,255,.75); font-size: 40%; }
+  .capa img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+  .capa img.quebrada { display: none; }
+  .capa.mini { width: 36px; height: 36px; border-radius: 6px; font-size: 36px; }
+  .capa.media { width: 46px; height: 46px; font-size: 46px; }
+  .capa.grande { width: 132px; height: 132px; border-radius: 14px; font-size: 132px; box-shadow: 0 12px 28px rgba(0,0,0,.45); }
+  .capa.album-topo { width: 76px; height: 76px; border-radius: 10px; font-size: 76px; }
 
-  .grid-curadoria { display: grid; grid-template-columns: 1.2fr 1fr; gap: 16px; align-items: start; }
-  @media (max-width: 860px) { .grid-curadoria { grid-template-columns: 1fr; } }
+  /* ---------- Playlists (esquerda) ---------- */
+  .pl-lista { display: flex; flex-direction: column; gap: 4px; }
+  .pl {
+    display: flex; align-items: center; gap: 12px; width: 100%; text-align: left; cursor: pointer;
+    background: none; border: none; color: inherit; padding: 8px; border-radius: 10px;
+  }
+  .pl:hover { background: var(--surface-2); }
+  .pl.ativa { background: var(--surface-3); }
+  .pl-txt { display: flex; flex-direction: column; min-width: 0; }
+  .pl-nome { font-weight: 600; font-size: 13.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .pl-meta { color: var(--text-3); font-size: 11.5px; margin-top: 2px; }
+  .pl.ativa .pl-nome { color: var(--accent); }
 
-  input[type="text"] { width: 100%; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border);
-    background: var(--page); color: var(--text-primary); font-size: 13.5px; font-family: inherit; }
-  input[type="text"]:focus { outline: 2px solid var(--series-1); outline-offset: -1px; }
+  /* ---------- Editor (centro) ---------- */
+  .ed-topo {
+    display: flex; gap: 20px; align-items: flex-end; padding: 22px 16px 18px; margin: 0 -12px 8px;
+    background: linear-gradient(180deg, var(--accent-wash), transparent);
+  }
+  .ed-info { min-width: 0; }
+  .ed-rotulo { font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: var(--text-2); font-weight: 600; }
+  .ed-nome { margin: 4px 0 6px; font-size: 26px; font-weight: 700; line-height: 1.15; letter-spacing: -0.3px; word-break: break-word; }
+  .ed-meta { color: var(--text-2); font-size: 13px; margin-bottom: 12px; }
+  .ed-botoes { display: flex; gap: 8px; flex-wrap: wrap; }
+  .bloco { margin-top: 18px; }
+  .bloco-topo { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+  .bloco-topo h3 { margin: 0; font-size: 13px; font-weight: 600; color: var(--text-2); text-transform: uppercase; letter-spacing: .8px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip {
+    display: inline-flex; align-items: center; gap: 6px; background: var(--surface-2); border-radius: 999px;
+    padding: 4px 6px 4px 12px; font-size: 12.5px;
+  }
+  .chip em { font-style: normal; color: var(--text-3); font-size: 11.5px; }
+  .chip button { background: none; border: none; color: var(--text-3); cursor: pointer; font-size: 12px; width: 20px; height: 20px; border-radius: 50%; }
+  .chip button:hover { color: var(--danger); background: var(--danger-wash); }
+  .faixa {
+    display: flex; align-items: center; gap: 10px; padding: 6px 8px 6px 4px; border-radius: 10px; border: 1px solid transparent;
+  }
+  .faixa:hover { background: var(--surface-2); }
+  .faixa.arrastando { opacity: .35; }
+  .faixa.sobre { border-color: var(--accent); background: var(--accent-wash); }
+  .alca { color: var(--text-3); cursor: grab; width: 18px; text-align: center; user-select: none; font-size: 13px; letter-spacing: -2px; }
+  .num { width: 22px; text-align: right; color: var(--text-3); font-size: 12px; font-variant-numeric: tabular-nums; }
+  .f-txt { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+  .f-nome { font-size: 13.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .f-album { font-size: 11.5px; color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .f-acoes { display: flex; flex-shrink: 0; }
 
-  .btn { font-size: 12.5px; font-weight: 550; background: var(--series-1); color: white; border: none;
-    border-radius: 7px; padding: 6px 12px; cursor: pointer; white-space: nowrap; }
-  .btn:hover { opacity: 0.88; } .btn:disabled { opacity: 0.5; cursor: default; }
-  .btn.secondary { background: var(--page); color: var(--text-primary); border: 1px solid var(--border); }
-  .btn.danger { background: rgba(208,59,59,0.12); color: var(--status-critical); }
-  .btn.small { padding: 3px 9px; font-size: 11.5px; }
+  /* ---------- Biblioteca (direita) ---------- */
+  .busca { padding: 0 16px 10px; }
+  .filtros { display: flex; gap: 6px; padding: 0 16px 12px; }
+  .chip-f {
+    background: var(--surface-2); color: var(--text-2); border: none; border-radius: 999px; padding: 6px 14px;
+    font-size: 12.5px; font-weight: 500; cursor: pointer;
+  }
+  .chip-f.ativo { background: var(--text); color: #000; }
+  .chip-f .n { background: var(--accent); color: var(--accent-ink); border-radius: 999px; padding: 0 7px; margin-left: 4px; font-size: 11px; font-weight: 700; }
+  .secao-titulo { font-size: 11.5px; text-transform: uppercase; letter-spacing: .8px; color: var(--text-3); font-weight: 600; margin: 14px 4px 6px; }
+  .album {
+    display: flex; align-items: center; gap: 12px; width: 100%; text-align: left; cursor: pointer; color: inherit;
+    background: none; border: none; padding: 7px 8px; border-radius: 10px;
+  }
+  .album:hover { background: var(--surface-2); }
+  .album .txt { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+  .album .nome { font-size: 13.5px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .album .meta { font-size: 11.5px; color: var(--text-3); margin-top: 2px; }
+  .selo { font-size: 10.5px; font-weight: 700; border-radius: 999px; padding: 2px 8px; flex-shrink: 0; }
+  .selo.novo { background: var(--accent); color: var(--accent-ink); }
+  .selo.na { background: var(--surface-3); color: var(--accent); }
+  .voltar { background: none; border: none; color: var(--text-2); cursor: pointer; font-size: 13px; padding: 4px 4px 12px; }
+  .voltar:hover { color: var(--text); }
+  .album-cab { display: flex; gap: 14px; align-items: center; margin-bottom: 12px; }
+  .album-cab h3 { margin: 0 0 4px; font-size: 17px; line-height: 1.2; word-break: break-word; }
+  .album-cab p { margin: 0; color: var(--text-2); font-size: 12.5px; }
+  .album-botoes { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+  .faixa-lib { display: flex; align-items: center; gap: 10px; padding: 6px 6px; border-radius: 10px; cursor: pointer; }
+  .faixa-lib:hover { background: var(--surface-2); }
+  .faixa-lib input { accent-color: var(--accent); width: 16px; height: 16px; flex-shrink: 0; }
+  .faixa-lib .f-nome { flex: 1; min-width: 0; }
+  .faixa-lib .ja { color: var(--accent); font-size: 13px; width: 30px; text-align: center; }
+  .mais { display: block; margin: 12px auto 0; }
 
-  .row-inline { display: flex; gap: 8px; align-items: center; }
-  .empty-note { font-size: 12.5px; color: var(--text-muted); padding: 14px 0; text-align: center; }
+  /* ---------- Modal ---------- */
+  .modal-overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,.65); display: flex; align-items: center; justify-content: center;
+    padding: 16px; z-index: 50; animation: fade .15s ease;
+  }
+  .modal { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; width: 100%; max-width: 440px; padding: 22px; max-height: 90vh; display: flex; flex-direction: column; box-shadow: 0 24px 60px rgba(0,0,0,.6); }
+  .modal.largo { max-width: 520px; }
+  .modal h2 { margin: 0 0 14px; font-size: 18px; }
+  .modal-corpo { overflow-y: auto; min-height: 0; }
+  .modal-acoes { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
+  .modal label.campo { display: block; font-size: 12px; color: var(--text-2); margin: 0 0 6px; font-weight: 500; }
+  .modal .grupo + .grupo { margin-top: 16px; }
+  .pessoas-lista { max-height: 260px; overflow-y: auto; margin: 10px 0; border-radius: 10px; background: var(--surface-2); padding: 4px; }
+  .pessoa { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 8px; cursor: pointer; }
+  .pessoa:hover { background: var(--surface-3); }
+  .pessoa input { accent-color: var(--accent); width: 16px; height: 16px; }
+  .p-nome { flex: 1; font-size: 13.5px; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .p-id { color: var(--text-3); font-size: 12px; font-family: ui-monospace, Menlo, Consolas, monospace; }
+  .add-id { display: flex; gap: 8px; }
 
-  .album-list, .track-list, .playlist-tracks { display: flex; flex-direction: column; gap: 2px; margin-top: 10px; max-height: 420px; overflow-y: auto; }
-  .album-item { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 8px 6px;
-    border-radius: 6px; cursor: pointer; font-size: 13px; }
-  .album-item:hover { background: var(--series-1-wash); }
-  .album-item.aberto { background: var(--series-1-wash); font-weight: 600; }
-  .album-item .meta { color: var(--text-muted); font-size: 11.5px; }
+  /* ---------- Toasts / prévia / login ---------- */
+  #toasts { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(var(--nav-h) + 78px); display: flex; flex-direction: column; gap: 8px; z-index: 60; align-items: center; width: calc(100% - 32px); pointer-events: none; }
+  .toast { background: var(--surface-3); color: var(--text); border-radius: 12px; padding: 11px 16px; font-size: 13px; box-shadow: 0 10px 30px rgba(0,0,0,.5); animation: sobe .2s ease; max-width: 520px; }
+  .toast.erro { background: #3a1d1d; color: #ffb4b4; border: 1px solid rgba(255,107,107,.35); }
+  .toast.sai { opacity: 0; transition: opacity .3s ease; }
+  #preview {
+    position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(var(--nav-h) + 12px); width: min(560px, calc(100% - 24px));
+    background: var(--surface-3); border-radius: 14px; padding: 8px 10px; display: flex; align-items: center; gap: 10px; z-index: 40;
+    box-shadow: 0 14px 40px rgba(0,0,0,.6); border: 1px solid var(--line);
+  }
+  #pv-toggle { background: var(--accent); color: var(--accent-ink); border: none; width: 36px; height: 36px; border-radius: 50%; cursor: pointer; font-size: 14px; flex-shrink: 0; }
+  .pv-info { flex: 1; min-width: 0; }
+  #pv-nome { font-size: 12.5px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 2px; }
+  #pv-prog { width: 100%; height: 4px; accent-color: var(--accent); margin: 4px 0 0; }
+  #login { position: fixed; inset: 0; background: var(--bg); z-index: 80; display: flex; align-items: center; justify-content: center; padding: 20px; }
+  .login-card { width: 100%; max-width: 360px; text-align: center; }
+  .login-card h1 { font-size: 26px; margin: 0 0 6px; }
+  .login-card h1 span { color: var(--accent); }
+  .login-card p { color: var(--text-2); margin: 0 0 22px; font-size: 14px; }
+  .login-card .btn { width: 100%; margin-top: 12px; padding: 12px; }
+  .login-erro { color: var(--danger); font-size: 13px; margin-top: 10px; min-height: 18px; }
 
-  .track-item { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 7px 6px;
-    border-bottom: 1px solid var(--grid); font-size: 12.5px; }
-  .track-item:last-child { border-bottom: none; }
-  .track-item .nome { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .track-item .acoes { display: flex; gap: 4px; flex-shrink: 0; }
+  /* ---------- Navegação de baixo (celular) ---------- */
+  #nav { display: none; }
+  @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes sobe { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
 
-  .playlist-header { display: flex; gap: 8px; align-items: center; margin-bottom: 10px; flex-wrap: wrap; }
-  .playlist-header select { flex: 1; min-width: 140px; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border);
-    background: var(--page); color: var(--text-primary); font-size: 13px; font-family: inherit; }
-
-  .pt-item { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 7px 6px;
-    border-bottom: 1px solid var(--grid); font-size: 12.5px; }
-  .pt-item:last-child { border-bottom: none; }
-  .pt-item .nome { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .pt-item .album { color: var(--text-muted); font-size: 11px; }
-  .pt-actions { display: flex; gap: 2px; }
-  .icon-btn { background: none; border: none; cursor: pointer; color: var(--text-muted); font-size: 13px; padding: 3px 5px; border-radius: 5px; }
-  .icon-btn:hover { color: var(--text-primary); background: var(--grid); }
-
-  .alvos-box textarea { width: 100%; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border);
-    background: var(--page); color: var(--text-primary); font-size: 12.5px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-    resize: vertical; min-height: 64px; }
-  .alvos-box textarea:focus { outline: 2px solid var(--series-1); outline-offset: -1px; }
-  .alvos-hint { font-size: 11px; color: var(--text-muted); margin: 4px 0 12px; }
-
-  .tag { display:inline-flex; align-items:center; font-size: 11px; font-weight: 550; padding: 2px 8px; border-radius: 999px;
-    background: rgba(250,178,25,0.14); color: var(--status-warning); border: 1px solid rgba(250,178,25,0.35); }
-
-  .novidade-card { display: flex; justify-content: space-between; align-items: center; gap: 12px;
-    padding: 12px 14px; border-radius: 10px; border: 1px solid var(--border); background: var(--surface-1); margin-bottom: 8px; }
-  .novidade-card .nome { font-weight: 600; font-size: 13.5px; }
-  .novidade-card .quando { font-size: 11.5px; color: var(--text-muted); }
-  .novidade-actions { display: flex; gap: 6px; flex-shrink: 0; }
+  @media (max-width: 1100px) {
+    .app { grid-template-columns: 240px minmax(0, 1fr) minmax(320px, 0.9fr); }
+    .capa.grande { width: 104px; height: 104px; font-size: 104px; }
+    .ed-nome { font-size: 22px; }
+  }
+  @media (max-width: 900px) {
+    :root { --nav-h: 58px; }
+    body { overflow: hidden; }
+    .topo { padding: 0 14px; }
+    .marca small { display: none; }
+    .app { display: block; height: calc(100dvh - var(--header-h) - var(--nav-h)); }
+    .painel { display: none; height: 100%; border-right: none; }
+    body[data-view="playlists"] #painel-pl,
+    body[data-view="editor"] #painel-ed,
+    body[data-view="lib"] #painel-lib { display: flex; }
+    #nav {
+      display: grid; grid-template-columns: repeat(3, 1fr); position: fixed; left: 0; right: 0; bottom: 0; height: var(--nav-h);
+      background: var(--surface); border-top: 1px solid var(--line); z-index: 30; padding-bottom: env(safe-area-inset-bottom);
+    }
+    #nav button { background: none; border: none; color: var(--text-3); font-size: 12px; font-weight: 500; cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; }
+    #nav button span { font-size: 18px; line-height: 1; }
+    #nav button.ativo { color: var(--accent); }
+    .ed-topo { flex-direction: column; align-items: flex-start; gap: 14px; }
+    .capa.grande { width: 96px; height: 96px; font-size: 96px; }
+    .ib { width: 34px; height: 34px; }
+    .alca { display: none; }
+  }
 </style>
 </head>
-<body>
-<div class="wrap">
-  <div id="banner-slot"></div>
+<body data-view="editor">
 
-  <header class="top">
-    <div>
-      <h1>Sonora — Curadoria</h1>
-      <p id="subtitle">Carregando...</p>
-    </div>
-  </header>
-
-  <div class="tabs" role="tablist">
-    <button class="tab-btn active" data-tab="curadoria" type="button">Curadoria</button>
-    <button class="tab-btn" data-tab="novidades" type="button">Novidades <span id="novidades-badge"></span></button>
+<header class="topo">
+  <div class="marca">
+    <h1>Sonora<span> · </span>Playlists</h1>
+    <small id="subtitulo"></small>
   </div>
+  <button class="btn sec pequeno" id="btn-sair" type="button" hidden>Sair</button>
+</header>
 
-  <div class="tab-panel" data-tab-panel="curadoria">
-    <div class="grid-curadoria">
-      <div class="card">
-        <h3>Biblioteca</h3>
-        <p class="sub">Busque um álbum, escolha as faixas e mande pra playlist selecionada ao lado</p>
-        <input type="text" id="busca-input" placeholder="Buscar álbum..." />
-        <div class="album-list" id="album-list"></div>
-        <div id="track-panel"></div>
-      </div>
-
-      <div class="card">
-        <h3>Playlist em edição</h3>
-        <div class="playlist-header">
-          <select id="playlist-select"></select>
-          <button class="btn secondary small" id="btn-renomear">Renomear</button>
-          <button class="btn danger small" id="btn-apagar">Apagar</button>
-        </div>
-
-        <p class="sub" style="margin-bottom:6px;">Quem vê — digite o(s) App_ID(s) (um por linha, ou separados por vírgula)</p>
-        <div class="alvos-box">
-          <textarea id="alvos-input" placeholder="Cole ou digite o App_ID de cada pessoa..."></textarea>
-        </div>
-        <p class="alvos-hint">Só entra quem já está liberado na planilha. Peça o App_ID pra própria pessoa — ele aparece na tela de validação do app.</p>
-        <button class="btn secondary small" id="btn-salvar-alvos" style="margin-bottom:14px;">Salvar quem vê</button>
-
-        <div class="row-inline" style="margin-bottom:12px;">
-          <input type="text" id="nova-playlist-input" placeholder="Nome da nova playlist..." />
-          <button class="btn small" id="btn-nova-playlist">Criar</button>
-        </div>
-        <p class="sub" id="playlist-sub"></p>
-        <div class="playlist-tracks" id="playlist-tracks"></div>
-      </div>
+<main class="app" id="app">
+  <section class="painel" id="painel-pl">
+    <div class="painel-topo">
+      <h2>Playlists</h2>
+      <button class="btn pequeno" id="btn-nova" type="button">+ Nova</button>
     </div>
-  </div>
+    <div class="corpo" id="lista-pl"></div>
+  </section>
 
-  <div class="tab-panel" data-tab-panel="novidades" hidden>
-    <div class="card">
-      <h3>Álbuns ainda não revisados</h3>
-      <p class="sub">Novos desde a última vez que você passou por aqui — inclua numa playlist ou ignore</p>
-      <div id="novidades-lista"></div>
+  <section class="painel" id="painel-ed">
+    <div class="corpo" id="editor"></div>
+  </section>
+
+  <section class="painel" id="painel-lib">
+    <div class="painel-topo">
+      <h2>Biblioteca</h2>
+      <span class="dica" id="lib-sub" style="margin:0"></span>
     </div>
+    <div class="busca"><input type="search" id="busca" placeholder="Buscar álbum ou faixa…   ( / )" autocomplete="off" /></div>
+    <div class="filtros">
+      <button class="chip-f ativo" data-filtro="todos" type="button">Todos</button>
+      <button class="chip-f" data-filtro="novidades" type="button">Novidades <span class="n" id="nov-n" hidden></span></button>
+    </div>
+    <div class="corpo" id="lib-corpo"></div>
+  </section>
+</main>
+
+<nav id="nav">
+  <button data-goto="playlists" type="button"><span>☰</span>Playlists</button>
+  <button data-goto="editor" type="button" class="ativo"><span>✎</span>Editar</button>
+  <button data-goto="lib" type="button"><span>♫</span>Biblioteca</button>
+</nav>
+
+<div id="preview" hidden>
+  <button id="pv-toggle" type="button" aria-label="Tocar ou pausar">⏸</button>
+  <div class="pv-info">
+    <div id="pv-nome"></div>
+    <input type="range" id="pv-prog" min="0" max="1000" value="0" aria-label="Progresso" />
   </div>
+  <button class="ib" id="pv-fechar" type="button" aria-label="Fechar prévia">✕</button>
 </div>
 
-<audio id="audio-preview" style="display:none;"></audio>
+<div id="toasts"></div>
+
+<div id="login" hidden>
+  <form class="login-card" id="login-form">
+    <h1>Sonora<span> · </span>Playlists</h1>
+    <p>Digite a senha do painel pra continuar.</p>
+    <input type="password" id="login-senha" placeholder="Senha" autocomplete="current-password" />
+    <div class="login-erro" id="login-erro"></div>
+    <button class="btn" type="submit">Entrar</button>
+  </form>
+</div>
+
+<audio id="audio" preload="none"></audio>
 
 <script>
-(function () {
-  const params = new URLSearchParams(location.search);
-  const CHAVE = params.get('chave') || '';
-  const fmt = (n) => Number(n || 0).toLocaleString('pt-BR');
+(() => {
+  'use strict';
 
-  async function apiGet(path) {
-    const r = await fetch(path, { headers: { 'X-Painel-Chave': CHAVE } });
-    const data = await r.json().catch(() => ({}));
-    if (!r.ok) throw new Error(data.erro || ('HTTP ' + r.status));
-    return data;
-  }
-  async function apiSend(method, path, body) {
+  // ============================== Utilidades ==============================
+  const $ = (s, r = document) => r.querySelector(s);
+  const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+  const LS_CHAVE = 'sonora_curadoria_chave';
+  let CHAVE = '';
+
+  const esc = (t) => String(t ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const norm = (t) => String(t || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+  const fmt = (n) => Number(n || 0).toLocaleString('pt-BR');
+  const plural = (n, um, varios) => `${fmt(n)} ${n === 1 ? um : varios}`;
+  const hue = (seed) => { let h = 7; for (const c of String(seed || '')) h = (h * 31 + c.charCodeAt(0)) & 0x7fffffff; return h % 360; };
+  const thumb = (id, sz) => `https://drive.google.com/thumbnail?id=${encodeURIComponent(id)}&sz=w${sz}`;
+  const capa = (capaId, classe, seed, sz = 128) =>
+    `<span class="capa ${classe}" style="--h:${hue(seed)}"><i>♪</i>${capaId ? `<img loading="lazy" alt="" src="${thumb(capaId, sz)}">` : ''}</span>`;
+  // <img> não propaga "error" — captura na fase de captura pra esconder capa quebrada.
+  document.addEventListener('error', (e) => { if (e.target && e.target.tagName === 'IMG') e.target.classList.add('quebrada'); }, true);
+
+  // ============================== Estado ==============================
+  const S = {
+    albuns: [], faixasPorAlbum: new Map(), faixaPorId: new Map(), albumPorId: new Map(),
+    playlists: [], atualId: null,
+    usuarios: [],
+    novidadesIds: new Set(),
+    filtro: 'todos', termo: '', limite: 60,
+    albumAberto: null, sel: new Set(),
+  };
+  const atual = () => S.playlists.find((p) => p.id === S.atualId) || null;
+  const idsNaPlaylist = () => new Set((atual()?.faixas || []).map((f) => f.fileId));
+
+  // ============================== API ==============================
+  async function api(method, path, body) {
     const r = await fetch(path, {
       method,
       headers: { 'Content-Type': 'application/json', 'X-Painel-Chave': CHAVE },
       body: body != null ? JSON.stringify(body) : undefined,
     });
     const data = await r.json().catch(() => ({}));
-    if (!r.ok) throw new Error(data.erro || ('HTTP ' + r.status));
+    if (!r.ok) { const e = new Error(data.erro || `HTTP ${r.status}`); e.status = r.status; throw e; }
     return data;
   }
 
-  function showBanner(kind, texto) {
-    document.getElementById('banner-slot').innerHTML = `<div class="banner ${kind}">${texto}</div>`;
-  }
-  function clearBanner() { document.getElementById('banner-slot').innerHTML = ''; }
-
-  function normalizar(txt) {
-    return String(txt || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
-  }
-
-  // ---------- Estado ----------
-  let cache = { albuns: [], arvore: [] };
-  let playlists = [];
-  let playlistAtualId = null;
-  let albumAberto = null; // id do álbum expandido na biblioteca
-
-  // ---------- Preview de áudio ----------
-  const audioPreview = document.getElementById('audio-preview');
-  let previewAtual = null; // fileId tocando agora
-
-  function alternarPreview(fileId, btn) {
-    if (previewAtual === fileId && !audioPreview.paused) {
-      audioPreview.pause();
-      return;
-    }
-    previewAtual = fileId;
-    audioPreview.src = `/api/admin/midia/${fileId}?chave=${encodeURIComponent(CHAVE)}`;
-    audioPreview.play().catch((err) => showBanner('error', 'Falha ao tocar: ' + err.message));
+  // ============================== Toasts e modal ==============================
+  function toast(msg, tipo = 'ok') {
+    const el = document.createElement('div');
+    el.className = `toast ${tipo}`;
+    el.textContent = msg;
+    $('#toasts').appendChild(el);
+    const dur = tipo === 'erro' ? 5000 : 2800;
+    setTimeout(() => el.classList.add('sai'), dur);
+    setTimeout(() => el.remove(), dur + 400);
   }
 
-  function atualizarBotoesPreview() {
-    document.querySelectorAll('.btn-preview').forEach((b) => {
-      const tocando = b.dataset.preview === previewAtual && !audioPreview.paused;
-      b.textContent = tocando ? '⏸' : '▶';
-    });
-  }
-  audioPreview.addEventListener('play', atualizarBotoesPreview);
-  audioPreview.addEventListener('pause', atualizarBotoesPreview);
-  audioPreview.addEventListener('ended', () => { previewAtual = null; atualizarBotoesPreview(); });
-
-  // ---------- Abas ----------
-  function ativarAba(nome) {
-    document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === nome));
-    document.querySelectorAll('.tab-panel').forEach(p => { p.hidden = p.dataset.tabPanel !== nome; });
-  }
-  document.querySelectorAll('.tab-btn').forEach(btn => {
-    btn.addEventListener('click', () => ativarAba(btn.dataset.tab));
-  });
-
-  // ---------- Biblioteca (esquerda) ----------
-  function renderAlbuns(lista) {
-    const el = document.getElementById('album-list');
-    if (!lista.length) {
-      el.innerHTML = '<div class="empty-note">Nenhum álbum encontrado.</div>';
-      return;
-    }
-    el.innerHTML = '';
-    lista.slice(0, 60).forEach((album) => {
-      const div = document.createElement('div');
-      div.className = 'album-item' + (albumAberto === album.id ? ' aberto' : '');
-      div.innerHTML = `<span>${album.name || '(sem nome)'}</span><span class="meta">${album.criadoEm ? new Date(album.criadoEm).toLocaleDateString('pt-BR') : ''}</span>`;
-      div.addEventListener('click', () => abrirAlbum(album));
-      el.appendChild(div);
-    });
-  }
-
-  function buscarAlbuns() {
-    const termo = normalizar(document.getElementById('busca-input').value.trim());
-    const lista = !termo
-      ? cache.albuns
-      : cache.albuns.filter((a) => normalizar(a.name).includes(termo));
-    renderAlbuns(lista);
-  }
-  document.getElementById('busca-input').addEventListener('input', buscarAlbuns);
-
-  function abrirAlbum(album) {
-    albumAberto = album.id;
-    buscarAlbuns();
-    const faixas = cache.arvore.filter((n) => n.tipo === 'faixa' && n.paiId === album.id);
-    const panel = document.getElementById('track-panel');
-    if (!faixas.length) {
-      panel.innerHTML = '<div class="empty-note">Esse álbum não tem faixas no cache.</div>';
-      return;
-    }
-    const header = document.createElement('div');
-    header.className = 'row-inline';
-    header.style.margin = '12px 0 6px';
-    header.innerHTML = `
-      <button class="btn small" id="btn-add-album">+ Álbum inteiro (${faixas.length})</button>
-      <button class="btn secondary small" id="btn-marcar-revisado">Marcar como revisado</button>
-    `;
-    const lista = document.createElement('div');
-    lista.className = 'track-list';
-    faixas.forEach((faixa) => {
-      const item = document.createElement('div');
-      item.className = 'track-item';
-      item.innerHTML = `<span class="nome">${faixa.name}</span><span class="acoes"><button class="icon-btn btn-preview" data-preview="${faixa.id}">▶</button><button class="btn small">+</button></span>`;
-      item.querySelector('.btn-preview').addEventListener('click', (e) => alternarPreview(faixa.id, e.currentTarget));
-      item.querySelector('.btn.small').addEventListener('click', () => adicionarFaixa(faixa, album));
-      lista.appendChild(item);
-    });
-    panel.innerHTML = '';
-    panel.appendChild(header);
-    panel.appendChild(lista);
-
-    document.getElementById('btn-add-album').addEventListener('click', async () => {
-      if (!playlistAtualId) return showBanner('error', 'Escolha ou crie uma playlist primeiro.');
-      const btn = document.getElementById('btn-add-album');
-      btn.disabled = true; btn.textContent = 'Adicionando...';
-      try {
-        for (const faixa of faixas) {
-          await apiSend('POST', `/api/admin/playlists/${playlistAtualId}/faixas`, {
-            fileId: faixa.id, nome: faixa.name, albumId: album.id, albumNome: album.name, capaId: album.capaId,
-          });
-        }
-        await marcarVisto(album.id, 'incluido');
-        await Promise.all([carregarPlaylistAtual(), carregarNovidades()]);
-        clearBanner();
-      } catch (err) {
-        showBanner('error', 'Falha ao adicionar álbum: ' + err.message);
-      } finally {
-        btn.disabled = false; btn.textContent = `+ Álbum inteiro (${faixas.length})`;
-      }
-    });
-
-    document.getElementById('btn-marcar-revisado').addEventListener('click', async () => {
-      await marcarVisto(album.id, 'ignorado');
-      await carregarNovidades();
-      showBanner('ok', `"${album.name}" marcado como revisado.`);
-    });
-  }
-
-  async function adicionarFaixa(faixa, album) {
-    if (!playlistAtualId) return showBanner('error', 'Escolha ou crie uma playlist primeiro.');
-    try {
-      await apiSend('POST', `/api/admin/playlists/${playlistAtualId}/faixas`, {
-        fileId: faixa.id, nome: faixa.name, albumId: album.id, albumNome: album.name, capaId: album.capaId,
+  function abrirModal({ titulo, corpo, acoes = [], largo = false }) {
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.innerHTML = `<div class="modal ${largo ? 'largo' : ''}" role="dialog" aria-modal="true"><h2>${esc(titulo)}</h2><div class="modal-corpo"></div><div class="modal-acoes"></div></div>`;
+    const corpoEl = $('.modal-corpo', overlay);
+    if (typeof corpo === 'string') corpoEl.innerHTML = corpo; else corpoEl.appendChild(corpo);
+    const onKey = (e) => { if (e.key === 'Escape') fechar(); };
+    const fechar = () => { overlay.remove(); document.removeEventListener('keydown', onKey); };
+    document.addEventListener('keydown', onKey);
+    overlay.addEventListener('mousedown', (e) => { if (e.target === overlay) fechar(); });
+    const handle = { fechar, el: overlay };
+    const acoesEl = $('.modal-acoes', overlay);
+    acoes.forEach((a) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = `btn ${a.tipo || ''}`;
+      b.textContent = a.rotulo;
+      b.addEventListener('click', async () => {
+        b.disabled = true;
+        try {
+          const r = a.onClick ? await a.onClick(handle) : undefined;
+          if (r !== false) fechar();
+        } catch (e) { toast(e.message, 'erro'); }
+        finally { b.disabled = false; }
       });
-      clearBanner();
-      await carregarPlaylistAtual();
-    } catch (err) {
-      showBanner('error', 'Falha ao adicionar faixa: ' + err.message);
-    }
-  }
-
-  async function marcarVisto(albumId, status) {
-    try {
-      await apiSend('POST', '/api/admin/vistos', { albumId, status });
-    } catch (err) {
-      console.error('Falha ao marcar visto:', err);
-    }
-  }
-
-  // ---------- Playlist em edição (direita) ----------
-  function renderPlaylistSelect() {
-    const sel = document.getElementById('playlist-select');
-    sel.innerHTML = '';
-    if (!playlists.length) {
-      sel.innerHTML = '<option value="">Nenhuma playlist ainda</option>';
-      playlistAtualId = null;
-      return;
-    }
-    playlists.forEach((p) => {
-      const opt = document.createElement('option');
-      opt.value = p.id; opt.textContent = p.nome;
-      sel.appendChild(opt);
+      acoesEl.appendChild(b);
     });
-    if (!playlistAtualId || !playlists.some((p) => p.id === playlistAtualId)) {
-      playlistAtualId = playlists[0].id;
+    document.body.appendChild(overlay);
+    setTimeout(() => { const i = $('input:not([type=checkbox]), textarea', overlay); if (i) i.focus(); }, 30);
+    return handle;
+  }
+
+  function confirmar(titulo, texto, rotulo = 'Confirmar', tipo = 'perigo') {
+    return new Promise((resolve) => {
+      let resolvido = false;
+      const fim = (v) => { if (!resolvido) { resolvido = true; resolve(v); } };
+      const h = abrirModal({
+        titulo, corpo: `<p style="margin:0;color:var(--text-2);line-height:1.5">${esc(texto)}</p>`,
+        acoes: [
+          { rotulo: 'Cancelar', tipo: 'sec', onClick: () => fim(false) },
+          { rotulo, tipo, onClick: () => fim(true) },
+        ],
+      });
+      // Fechar pelo fundo ou Esc conta como cancelar.
+      new MutationObserver((_, obs) => { if (!h.el.isConnected) { fim(false); obs.disconnect(); } })
+        .observe(document.body, { childList: true });
+    });
+  }
+
+  // ============================== Seletor de pessoas ==============================
+  function montarSeletorPessoas(selecionados) {
+    const el = document.createElement('div');
+    el.innerHTML = `
+      <input type="search" class="busca-pessoas" placeholder="Buscar por nome ou ID…" autocomplete="off" />
+      <div class="pessoas-lista"></div>
+      <div class="add-id"><input type="text" class="novo-id" placeholder="Ou digite um App_ID liberado" /><button type="button" class="btn sec pequeno">Adicionar</button></div>
+      <p class="dica contagem"></p>`;
+    const lista = $('.pessoas-lista', el);
+    const busca = $('.busca-pessoas', el);
+    const liberados = S.usuarios.filter((u) => norm(u.status) === 'liberado');
+    const contar = () => { $('.contagem', el).textContent = `${plural(selecionados.size, 'pessoa selecionada', 'pessoas selecionadas')}${liberados.length ? '' : ' · lista de pessoas indisponível, digite o App_ID'}`; };
+    function desenhar() {
+      const t = norm(busca.value);
+      const extras = [...selecionados].filter((id) => !liberados.some((u) => u.appId === id)).map((id) => ({ appId: id, nome: '' }));
+      const itens = [...liberados.map((u) => ({ appId: u.appId, nome: u.nome })), ...extras]
+        .filter((u) => !t || norm(u.nome).includes(t) || norm(u.appId).includes(t));
+      lista.innerHTML = itens.length
+        ? itens.map((u) => `<label class="pessoa"><input type="checkbox" value="${esc(u.appId)}" ${selecionados.has(u.appId) ? 'checked' : ''}><span class="p-nome">${esc(u.nome || 'Sem nome')}</span><span class="p-id">${esc(u.appId)}</span></label>`).join('')
+        : '<div class="vazio">Ninguém encontrado.</div>';
+      contar();
     }
-    sel.value = playlistAtualId;
-  }
-  document.getElementById('playlist-select').addEventListener('change', (e) => {
-    playlistAtualId = e.target.value;
-    carregarPlaylistAtual();
-  });
-
-  // ---------- Quem vê (App_ID digitado, não lista de nomes) ----------
-  function renderAlvos() {
-    const input = document.getElementById('alvos-input');
-    const playlist = playlists.find((p) => p.id === playlistAtualId);
-    input.value = playlist ? (playlist.appIds || []).join('\n') : '';
-  }
-
-  function alvosDigitados() {
-    return [...new Set(
-      document.getElementById('alvos-input').value
-        .split(/[\n,]/)
-        .map((s) => s.trim())
-        .filter(Boolean)
-    )];
+    lista.addEventListener('change', (e) => {
+      const cb = e.target.closest('input[type=checkbox]');
+      if (!cb) return;
+      if (cb.checked) selecionados.add(cb.value); else selecionados.delete(cb.value);
+      contar();
+    });
+    busca.addEventListener('input', desenhar);
+    const novo = $('.novo-id', el);
+    const adicionarId = () => { const id = novo.value.trim(); if (!id) return; selecionados.add(id); novo.value = ''; desenhar(); };
+    $('.add-id .btn', el).addEventListener('click', adicionarId);
+    novo.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); adicionarId(); } });
+    desenhar();
+    return el;
   }
 
-  document.getElementById('btn-salvar-alvos').addEventListener('click', async () => {
-    if (!playlistAtualId) return showBanner('error', 'Selecione uma playlist primeiro.');
-    const appIds = alvosDigitados();
-    if (!appIds.length) return showBanner('error', 'Digite pelo menos um App_ID.');
-    try {
-      await apiSend('PUT', `/api/admin/playlists/${playlistAtualId}/usuarios`, { appIds });
-      clearBanner();
-      await carregarPlaylistAtual();
-    } catch (err) {
-      showBanner('error', 'Falha ao salvar quem vê: ' + err.message);
-    }
-  });
-
-  function renderPlaylistTracks() {
-    const playlist = playlists.find((p) => p.id === playlistAtualId);
-    const container = document.getElementById('playlist-tracks');
-    const sub = document.getElementById('playlist-sub');
-    if (!playlist) {
-      container.innerHTML = '';
-      sub.textContent = '';
+  // ============================== Playlists (esquerda) ==============================
+  function renderPlaylists() {
+    const el = $('#lista-pl');
+    if (!S.playlists.length) {
+      el.innerHTML = '<div class="vazio">Nenhuma playlist ainda.<br>Toque em <b>+ Nova</b> pra criar a primeira.</div>';
       return;
     }
-    sub.textContent = `${playlist.faixas.length} faixa(s)`;
-    if (!playlist.faixas.length) {
-      container.innerHTML = '<div class="empty-note">Ainda sem faixas. Adicione pela biblioteca à esquerda.</div>';
+    el.innerHTML = `<div class="pl-lista">${S.playlists.map((p) => `
+      <button class="pl ${p.id === S.atualId ? 'ativa' : ''}" data-pl="${esc(p.id)}" type="button">
+        ${capa(p.capaId, 'media', p.nome, 96)}
+        <span class="pl-txt"><span class="pl-nome">${esc(p.nome)}</span>
+        <span class="pl-meta">${plural((p.faixas || []).length, 'faixa', 'faixas')} · ${p.donoAppId ? 'do cliente' : plural((p.appIds || []).length, 'pessoa', 'pessoas')}</span></span>
+      </button>`).join('')}</div>`;
+  }
+
+  function abrirNovaPlaylist() {
+    const selecionados = new Set();
+    const corpo = document.createElement('div');
+    corpo.innerHTML = `<div class="grupo"><label class="campo">Nome da playlist</label><input type="text" class="np-nome" placeholder="Ex.: Louvores de domingo" /></div><div class="grupo"><label class="campo">Quem vai ver (pelo menos uma pessoa)</label></div>`;
+    $('.grupo:last-child', corpo).appendChild(montarSeletorPessoas(selecionados));
+    abrirModal({
+      titulo: 'Nova playlist', corpo, largo: true,
+      acoes: [
+        { rotulo: 'Cancelar', tipo: 'sec' },
+        {
+          rotulo: 'Criar playlist',
+          onClick: async () => {
+            const nome = $('.np-nome', corpo).value.trim();
+            if (!nome) { toast('Dê um nome pra playlist.', 'erro'); return false; }
+            if (!selecionados.size) { toast('Escolha pelo menos uma pessoa.', 'erro'); return false; }
+            const r = await api('POST', '/api/admin/playlists', { nome, appIds: [...selecionados] });
+            await carregarPlaylists();
+            S.atualId = r.id;
+            renderTudo();
+            irPara('editor');
+            toast('Playlist criada. Agora adicione faixas pela biblioteca.');
+          },
+        },
+      ],
+    });
+  }
+
+  async function carregarPlaylists() {
+    const r = await api('GET', '/api/admin/playlists');
+    S.playlists = (r.playlists || []).map((p) => ({ ...p, faixas: p.faixas || [], appIds: p.appIds || [] }));
+    if (!S.playlists.some((p) => p.id === S.atualId)) S.atualId = S.playlists[0]?.id || null;
+  }
+
+  // ============================== Editor (centro) ==============================
+  function nomePessoa(id) { return S.usuarios.find((u) => u.appId === id)?.nome || ''; }
+
+  function renderEditor() {
+    const el = $('#editor');
+    const p = atual();
+    if (!p) {
+      el.innerHTML = `<div class="vazio" style="padding-top:80px"><div style="font-size:40px;margin-bottom:10px">♫</div>Crie uma playlist pra começar.<br><br><button class="btn" data-acao="nova" type="button">+ Nova playlist</button></div>`;
       return;
     }
-    container.innerHTML = '';
-    playlist.faixas.forEach((faixa, i) => {
-      const item = document.createElement('div');
-      item.className = 'pt-item';
-      item.innerHTML = `
-        <span class="nome">${faixa.nome}${faixa.albumNome ? `<span class="album"> — ${faixa.albumNome}</span>` : ''}</span>
-        <span class="pt-actions">
-          <button class="icon-btn btn-preview" data-preview="${faixa.fileId}">▶</button>
-          <button class="icon-btn" data-acao="up" ${i === 0 ? 'disabled' : ''}>↑</button>
-          <button class="icon-btn" data-acao="down" ${i === playlist.faixas.length - 1 ? 'disabled' : ''}>↓</button>
-          <button class="icon-btn" data-acao="remover">✕</button>
+    const chips = (p.appIds || []).map((id) => {
+      const n = nomePessoa(id);
+      return `<span class="chip">${n ? `${esc(n)} <em>${esc(id)}</em>` : esc(id)}<button data-acao="tirar-pessoa" data-id="${esc(id)}" type="button" title="Remover" aria-label="Remover pessoa">✕</button></span>`;
+    }).join('');
+    const faixas = p.faixas.length ? p.faixas.map((f, i) => `
+      <div class="faixa" draggable="true" data-i="${i}" data-id="${esc(f.fileId)}">
+        <span class="alca" title="Arraste pra reordenar">⋮⋮</span>
+        <span class="num">${i + 1}</span>
+        ${capa(f.capaId, 'mini', f.albumNome || f.nome, 72)}
+        <span class="f-txt"><span class="f-nome">${esc(f.nome)}</span>${f.albumNome ? `<span class="f-album">${esc(f.albumNome)}</span>` : ''}</span>
+        <span class="f-acoes">
+          <button class="ib play" data-preview="${esc(f.fileId)}" type="button" title="Ouvir prévia">▶</button>
+          <button class="ib" data-acao="subir" ${i === 0 ? 'disabled' : ''} type="button" title="Subir">↑</button>
+          <button class="ib" data-acao="descer" ${i === p.faixas.length - 1 ? 'disabled' : ''} type="button" title="Descer">↓</button>
+          <button class="ib" data-acao="remover" type="button" title="Tirar da playlist">✕</button>
         </span>
-      `;
-      item.querySelector('.btn-preview').addEventListener('click', (e) => alternarPreview(faixa.fileId, e.currentTarget));
-      item.querySelector('[data-acao="remover"]').addEventListener('click', () => removerFaixa(faixa.fileId));
-      item.querySelector('[data-acao="up"]').addEventListener('click', () => moverFaixa(i, -1));
-      item.querySelector('[data-acao="down"]').addEventListener('click', () => moverFaixa(i, 1));
-      container.appendChild(item);
+      </div>`).join('') : '<div class="vazio">Playlist vazia.<br>Escolha álbuns ou faixas na biblioteca ao lado.</div>';
+
+    el.innerHTML = `
+      <div class="ed-topo">
+        ${capa(p.capaId, 'grande', p.nome, 300)}
+        <div class="ed-info">
+          <div class="ed-rotulo">${p.donoAppId ? `Playlist do cliente${nomePessoa(p.donoAppId) ? ' · ' + esc(nomePessoa(p.donoAppId)) : ''}` : 'Playlist'}</div>
+          <h2 class="ed-nome">${esc(p.nome)}</h2>
+          <div class="ed-meta">${plural(p.faixas.length, 'faixa', 'faixas')} · ${plural(p.appIds.length, 'pessoa vê', 'pessoas veem')}</div>
+          <div class="ed-botoes">
+            <button class="btn sec pequeno" data-acao="renomear" type="button">Renomear</button>
+            <button class="btn perigo pequeno" data-acao="apagar" type="button">Apagar</button>
+          </div>
+        </div>
+      </div>
+      <section class="bloco">
+        <div class="bloco-topo"><h3>Quem vê</h3><button class="btn sec pequeno" data-acao="pessoas" type="button">Editar pessoas</button></div>
+        <div class="chips">${chips || '<span class="dica" style="margin:0">Ninguém — a playlist não aparece pra ninguém.</span>'}</div>
+      </section>
+      <section class="bloco">
+        <div class="bloco-topo"><h3>Faixas</h3></div>
+        <div id="faixas">${faixas}</div>
+      </section>`;
+  }
+
+  async function renomear() {
+    const p = atual(); if (!p) return;
+    const corpo = document.createElement('div');
+    corpo.innerHTML = `<label class="campo">Novo nome</label><input type="text" value="${esc(p.nome)}" />`;
+    abrirModal({
+      titulo: 'Renomear playlist', corpo,
+      acoes: [{ rotulo: 'Cancelar', tipo: 'sec' }, {
+        rotulo: 'Salvar',
+        onClick: async () => {
+          const nome = $('input', corpo).value.trim();
+          if (!nome) return false;
+          await api('PUT', `/api/admin/playlists/${p.id}`, { nome });
+          p.nome = nome; renderTudo(); toast('Nome atualizado.');
+        },
+      }],
+    });
+    $('input', corpo).addEventListener('keydown', (e) => { if (e.key === 'Enter') $('.modal-acoes .btn:last-child').click(); });
+  }
+
+  async function apagar() {
+    const p = atual(); if (!p) return;
+    if (!(await confirmar('Apagar playlist?', `"${p.nome}" some do app de todo mundo que a vê. Essa ação não pode ser desfeita.`, 'Apagar'))) return;
+    try {
+      await api('DELETE', `/api/admin/playlists/${p.id}`);
+      S.playlists = S.playlists.filter((x) => x.id !== p.id);
+      S.atualId = S.playlists[0]?.id || null;
+      renderTudo(); toast('Playlist apagada.');
+    } catch (e) { toast('Falha ao apagar: ' + e.message, 'erro'); }
+  }
+
+  function editarPessoas() {
+    const p = atual(); if (!p) return;
+    const selecionados = new Set(p.appIds);
+    abrirModal({
+      titulo: 'Quem vê essa playlist', corpo: montarSeletorPessoas(selecionados), largo: true,
+      acoes: [{ rotulo: 'Cancelar', tipo: 'sec' }, {
+        rotulo: 'Salvar',
+        onClick: async () => {
+          if (!selecionados.size) { toast('Escolha pelo menos uma pessoa.', 'erro'); return false; }
+          await api('PUT', `/api/admin/playlists/${p.id}/usuarios`, { appIds: [...selecionados] });
+          p.appIds = [...selecionados]; renderTudo(); toast('Pessoas atualizadas.');
+        },
+      }],
     });
   }
 
-  async function carregarPlaylistAtual() {
+  async function tirarPessoa(id) {
+    const p = atual(); if (!p) return;
+    if (p.appIds.length <= 1) return toast('A playlist precisa de pelo menos uma pessoa. Use "Editar pessoas" pra trocar.', 'erro');
+    const novos = p.appIds.filter((x) => x !== id);
     try {
-      const lista = await apiGet('/api/admin/playlists');
-      playlists = lista.playlists || [];
-      renderPlaylistSelect();
-      renderPlaylistTracks();
-      renderAlvos();
-    } catch (err) {
-      showBanner('error', 'Falha ao carregar playlists: ' + err.message);
-    }
+      await api('PUT', `/api/admin/playlists/${p.id}/usuarios`, { appIds: novos });
+      p.appIds = novos; renderTudo();
+    } catch (e) { toast('Falha ao atualizar: ' + e.message, 'erro'); }
   }
 
   async function removerFaixa(fileId) {
-    try {
-      await apiSend('DELETE', `/api/admin/playlists/${playlistAtualId}/faixas/${encodeURIComponent(fileId)}`);
-      await carregarPlaylistAtual();
-    } catch (err) {
-      showBanner('error', 'Falha ao remover faixa: ' + err.message);
-    }
+    const p = atual(); if (!p) return;
+    const anterior = p.faixas;
+    p.faixas = anterior.filter((f) => f.fileId !== fileId);
+    renderTudo();
+    try { await api('DELETE', `/api/admin/playlists/${p.id}/faixas/${encodeURIComponent(fileId)}`); }
+    catch (e) { p.faixas = anterior; renderTudo(); toast('Falha ao remover: ' + e.message, 'erro'); }
   }
 
-  async function moverFaixa(indice, direcao) {
-    const playlist = playlists.find((p) => p.id === playlistAtualId);
-    if (!playlist) return;
-    const ordem = playlist.faixas.map((f) => f.fileId);
-    const novoIndice = indice + direcao;
-    if (novoIndice < 0 || novoIndice >= ordem.length) return;
-    [ordem[indice], ordem[novoIndice]] = [ordem[novoIndice], ordem[indice]];
-    try {
-      await apiSend('PUT', `/api/admin/playlists/${playlistAtualId}/reordenar`, { ordem });
-      await carregarPlaylistAtual();
-    } catch (err) {
-      showBanner('error', 'Falha ao reordenar: ' + err.message);
-    }
+  async function reordenar(de, para) {
+    const p = atual(); if (!p || de === para || para < 0 || para >= p.faixas.length) return;
+    const anterior = p.faixas;
+    const nova = [...anterior];
+    const [mov] = nova.splice(de, 1);
+    nova.splice(para, 0, mov);
+    p.faixas = nova;
+    renderEditor(); posRender();
+    try { await api('PUT', `/api/admin/playlists/${p.id}/reordenar`, { ordem: nova.map((f) => f.fileId) }); }
+    catch (e) { p.faixas = anterior; renderEditor(); posRender(); toast('Falha ao reordenar: ' + e.message, 'erro'); }
   }
 
-  document.getElementById('btn-nova-playlist').addEventListener('click', async () => {
-    const input = document.getElementById('nova-playlist-input');
-    const nome = input.value.trim();
-    if (!nome) return;
-    const appIds = alvosDigitados();
-    if (!appIds.length) return showBanner('error', 'Digite o(s) App_ID(s) de quem vai ver essa playlist antes de criar.');
-    try {
-      const resp = await apiSend('POST', '/api/admin/playlists', { nome, appIds });
-      input.value = '';
-      playlistAtualId = resp.id;
-      clearBanner();
-      await carregarPlaylistAtual();
-    } catch (err) {
-      showBanner('error', 'Falha ao criar playlist: ' + err.message);
-    }
+  // Arrastar e soltar pra reordenar (desktop; no celular use as setas).
+  let arrastando = null;
+  $('#editor').addEventListener('dragstart', (e) => {
+    const row = e.target.closest('.faixa'); if (!row) return;
+    arrastando = +row.dataset.i; row.classList.add('arrastando');
+    e.dataTransfer.effectAllowed = 'move';
+    try { e.dataTransfer.setData('text/plain', String(arrastando)); } catch (_) { /* Safari */ }
   });
-
-  document.getElementById('btn-renomear').addEventListener('click', async () => {
-    if (!playlistAtualId) return;
-    const playlist = playlists.find((p) => p.id === playlistAtualId);
-    const novoNome = prompt('Novo nome da playlist:', playlist ? playlist.nome : '');
-    if (!novoNome || !novoNome.trim()) return;
-    try {
-      await apiSend('PUT', `/api/admin/playlists/${playlistAtualId}`, { nome: novoNome.trim() });
-      await carregarPlaylistAtual();
-    } catch (err) {
-      showBanner('error', 'Falha ao renomear: ' + err.message);
-    }
+  $('#editor').addEventListener('dragover', (e) => {
+    if (arrastando == null) return;
+    const row = e.target.closest('.faixa'); if (!row) return;
+    e.preventDefault();
+    $$('.faixa.sobre').forEach((r) => r.classList.remove('sobre'));
+    row.classList.add('sobre');
   });
-
-  document.getElementById('btn-apagar').addEventListener('click', async () => {
-    if (!playlistAtualId) return;
-    const playlist = playlists.find((p) => p.id === playlistAtualId);
-    if (!confirm(`Apagar a playlist "${playlist ? playlist.nome : ''}"? Essa ação não pode ser desfeita.`)) return;
-    try {
-      await apiSend('DELETE', `/api/admin/playlists/${playlistAtualId}`);
-      playlistAtualId = null;
-      await carregarPlaylistAtual();
-    } catch (err) {
-      showBanner('error', 'Falha ao apagar: ' + err.message);
-    }
+  $('#editor').addEventListener('drop', (e) => {
+    const row = e.target.closest('.faixa'); if (!row || arrastando == null) return;
+    e.preventDefault();
+    const de = arrastando; arrastando = null;
+    reordenar(de, +row.dataset.i);
   });
+  $('#editor').addEventListener('dragend', () => { arrastando = null; $$('.faixa.arrastando, .faixa.sobre').forEach((r) => r.classList.remove('arrastando', 'sobre')); });
 
-  // ---------- Novidades ----------
-  async function carregarNovidades() {
-    try {
-      const resp = await apiGet('/api/admin/novidades');
-      const novidades = resp.novidades || [];
-      const badge = document.getElementById('novidades-badge');
-      badge.innerHTML = novidades.length ? `<span class="tag">${novidades.length}</span>` : '';
+  // ============================== Biblioteca (direita) ==============================
+  function albunsFiltrados() {
+    let lista = S.albuns;
+    if (S.filtro === 'novidades') lista = lista.filter((a) => S.novidadesIds.has(a.id));
+    const t = norm(S.termo.trim());
+    if (t) lista = lista.filter((a) => norm(a.name).includes(t));
+    return lista;
+  }
 
-      const lista = document.getElementById('novidades-lista');
-      if (!novidades.length) {
-        lista.innerHTML = '<div class="empty-note">Nada novo por enquanto — tudo revisado.</div>';
-        return;
+  let indiceFaixas = null; // [{f, n}] com nome normalizado, montado sob demanda
+  function buscarFaixas(termo) {
+    if (!indiceFaixas) {
+      indiceFaixas = [];
+      S.faixaPorId.forEach((f) => indiceFaixas.push({ f, n: norm(f.name) }));
+    }
+    const t = norm(termo.trim()); const out = [];
+    for (const it of indiceFaixas) { if (it.n.includes(t)) { out.push(it.f); if (out.length >= 30) break; } }
+    return out;
+  }
+
+  function renderLib() {
+    S.albumAberto ? renderAlbum() : renderListaAlbuns();
+    const n = S.novidadesIds.size;
+    const badge = $('#nov-n');
+    badge.hidden = !n; badge.textContent = fmt(n);
+    $('#lib-sub').textContent = `${fmt(S.albuns.length)} álbuns`;
+  }
+
+  function linhaAlbum(a, naPlaylist) {
+    const faixas = S.faixasPorAlbum.get(a.id) || [];
+    const dentro = faixas.filter((f) => naPlaylist.has(f.id)).length;
+    return `<button class="album" data-album="${esc(a.id)}" type="button">
+      ${capa(a.capaId, 'mini', a.name, 72)}
+      <span class="txt"><span class="nome">${esc(a.name || '(sem nome)')}</span>
+      <span class="meta">${plural(faixas.length, 'faixa', 'faixas')}${a.criadoEm ? ' · ' + new Date(a.criadoEm).toLocaleDateString('pt-BR') : ''}</span></span>
+      ${S.novidadesIds.has(a.id) ? '<span class="selo novo">novo</span>' : ''}
+      ${dentro ? `<span class="selo na">${dentro}/${faixas.length}</span>` : ''}
+    </button>`;
+  }
+
+  function renderListaAlbuns() {
+    const el = $('#lib-corpo');
+    const naPlaylist = idsNaPlaylist();
+    const lista = albunsFiltrados();
+    let html = '';
+
+    if (S.filtro === 'novidades' && lista.length) {
+      html += `<div style="padding:0 4px 8px"><button class="btn sec pequeno" data-acao="revisar-todos" type="button">Marcar ${fmt(lista.length)} como revisados</button></div>`;
+    }
+
+    if (S.termo.trim().length >= 3) {
+      const faixas = buscarFaixas(S.termo);
+      if (faixas.length) {
+        html += '<div class="secao-titulo">Faixas</div>' + faixas.map((f) => {
+          const a = S.albumPorId.get(f.paiId);
+          const ja = naPlaylist.has(f.id);
+          return `<div class="faixa-lib" data-faixa-busca="${esc(f.id)}">
+            <span class="f-txt"><span class="f-nome">${esc(f.name)}</span><span class="f-album">${esc(a?.name || '')}</span></span>
+            <button class="ib play" data-preview="${esc(f.id)}" type="button" title="Ouvir prévia">▶</button>
+            ${ja ? '<span class="ja" title="Já está na playlist">✓</span>' : `<button class="ib" data-acao="add-faixa-busca" data-id="${esc(f.id)}" type="button" title="Adicionar">＋</button>`}
+          </div>`;
+        }).join('');
       }
-      lista.innerHTML = '';
-      novidades.forEach((album) => {
-        const card = document.createElement('div');
-        card.className = 'novidade-card';
-        card.innerHTML = `
-          <span>
-            <div class="nome">${album.name || '(sem nome)'}</div>
-            <div class="quando">${album.criadoEm ? new Date(album.criadoEm).toLocaleDateString('pt-BR') : ''}</div>
-          </span>
-          <span class="novidade-actions">
-            <button class="btn small" data-acao="revisar">Revisar</button>
-            <button class="btn secondary small" data-acao="ignorar">Ignorar</button>
-          </span>
-        `;
-        card.querySelector('[data-acao="revisar"]').addEventListener('click', () => {
-          ativarAba('curadoria');
-          document.getElementById('busca-input').value = album.name || '';
-          buscarAlbuns();
-          abrirAlbum(album);
-        });
-        card.querySelector('[data-acao="ignorar"]').addEventListener('click', async () => {
-          await marcarVisto(album.id, 'ignorado');
-          await carregarNovidades();
-        });
-        lista.appendChild(card);
+      html += '<div class="secao-titulo">Álbuns</div>';
+    }
+
+    if (!lista.length) {
+      html += `<div class="vazio">${S.filtro === 'novidades' ? 'Nada novo por enquanto — tudo revisado. 🎉' : 'Nenhum álbum encontrado.'}</div>`;
+    } else {
+      html += lista.slice(0, S.limite).map((a) => linhaAlbum(a, naPlaylist)).join('');
+      if (lista.length > S.limite) html += `<button class="btn sec pequeno mais" data-acao="mais" type="button">Mostrar mais (${fmt(lista.length - S.limite)})</button>`;
+    }
+    el.innerHTML = html;
+  }
+
+  function abrirAlbum(id) { S.albumAberto = id; S.sel = new Set(); renderLib(); $('#lib-corpo').scrollTop = 0; }
+  function fecharAlbum() { S.albumAberto = null; renderLib(); }
+
+  function renderAlbum() {
+    const a = S.albumPorId.get(S.albumAberto);
+    if (!a) { S.albumAberto = null; return renderListaAlbuns(); }
+    const faixas = S.faixasPorAlbum.get(a.id) || [];
+    const naPlaylist = idsNaPlaylist();
+    const faltam = faixas.filter((f) => !naPlaylist.has(f.id));
+    const novo = S.novidadesIds.has(a.id);
+    const sel = [...S.sel].filter((id) => !naPlaylist.has(id));
+    $('#lib-corpo').innerHTML = `
+      <button class="voltar" data-acao="voltar" type="button">← Voltar aos álbuns</button>
+      <div class="album-cab">
+        ${capa(a.capaId, 'album-topo', a.name, 200)}
+        <div><h3>${esc(a.name || '(sem nome)')}</h3>
+        <p>${plural(faixas.length, 'faixa', 'faixas')}${faixas.length - faltam.length ? ` · ${fmt(faixas.length - faltam.length)} já na playlist` : ''}</p></div>
+      </div>
+      <div class="album-botoes">
+        <button class="btn pequeno" data-acao="add-album" ${faltam.length ? '' : 'disabled'} type="button">＋ Álbum inteiro${faltam.length ? ` (${fmt(faltam.length)})` : ''}</button>
+        ${sel.length ? `<button class="btn pequeno" data-acao="add-sel" type="button">Adicionar ${fmt(sel.length)} selecionada${sel.length === 1 ? '' : 's'}</button>` : ''}
+        ${novo ? '<button class="btn sec pequeno" data-acao="revisado" type="button">Marcar como revisado</button>' : ''}
+      </div>
+      ${faixas.length ? faixas.map((f) => {
+        const ja = naPlaylist.has(f.id);
+        return `<label class="faixa-lib">
+          <input type="checkbox" data-sel="${esc(f.id)}" ${ja ? 'disabled' : ''} ${S.sel.has(f.id) ? 'checked' : ''}>
+          <span class="f-nome">${esc(f.name)}</span>
+          <button class="ib play" data-preview="${esc(f.id)}" type="button" title="Ouvir prévia">▶</button>
+          ${ja ? '<span class="ja" title="Já está na playlist">✓</span>' : `<button class="ib" data-acao="add-faixa" data-id="${esc(f.id)}" type="button" title="Adicionar">＋</button>`}
+        </label>`;
+      }).join('') : '<div class="vazio">Esse álbum não tem faixas no catálogo.</div>'}`;
+  }
+
+  async function adicionarFaixas(faixas, album, { incluido = false } = {}) {
+    const p = atual();
+    if (!p) return toast('Crie ou escolha uma playlist primeiro.', 'erro');
+    if (!faixas.length) return;
+    try {
+      const corpo = faixas.map((f) => {
+        const a = album || S.albumPorId.get(f.paiId) || {};
+        return { fileId: f.id, nome: f.name, albumId: a.id || f.paiId || null, albumNome: a.name || '', capaId: a.capaId || null };
       });
-    } catch (err) {
-      showBanner('error', 'Falha ao carregar novidades: ' + err.message);
+      const r = await api('POST', `/api/admin/playlists/${p.id}/faixas-lote`, { faixas: corpo });
+      const i = S.playlists.findIndex((x) => x.id === p.id);
+      if (i >= 0 && r.playlist) S.playlists[i] = { ...r.playlist, faixas: r.playlist.faixas || [], appIds: r.playlist.appIds || [] };
+      toast(r.adicionadas ? `${plural(r.adicionadas, 'faixa adicionada', 'faixas adicionadas')} em "${p.nome}".` : 'Essas faixas já estavam na playlist.');
+      S.sel = new Set();
+      if (incluido && album) await marcarRevisado([album.id], 'incluido');
+      renderTudo();
+    } catch (e) { toast('Falha ao adicionar: ' + e.message, 'erro'); }
+  }
+
+  async function marcarRevisado(ids, status = 'ignorado') {
+    try {
+      if (ids.length === 1) await api('POST', '/api/admin/vistos', { albumId: ids[0], status });
+      else await api('POST', '/api/admin/vistos-lote', { albumIds: ids, status });
+      ids.forEach((id) => S.novidadesIds.delete(id));
+    } catch (e) { toast('Falha ao marcar como revisado: ' + e.message, 'erro'); }
+  }
+
+  // ============================== Prévia de áudio ==============================
+  const audio = $('#audio');
+  let previewId = null;
+  const nomeDaFaixa = (id) => S.faixaPorId.get(id)?.name || (atual()?.faixas || []).find((f) => f.fileId === id)?.nome || '';
+
+  function tocarPreview(id) {
+    if (previewId === id && !audio.paused) { audio.pause(); return; }
+    if (previewId !== id) {
+      previewId = id;
+      audio.src = `/api/admin/midia/${encodeURIComponent(id)}?chave=${encodeURIComponent(CHAVE)}`;
+    }
+    $('#preview').hidden = false;
+    $('#pv-nome').textContent = nomeDaFaixa(id);
+    audio.play().catch((e) => toast('Não foi possível tocar a prévia: ' + e.message, 'erro'));
+  }
+  function atualizarPreviewUI() {
+    const tocando = !audio.paused;
+    $$('[data-preview]').forEach((b) => {
+      const esse = b.dataset.preview === previewId && tocando;
+      b.textContent = esse ? '⏸' : '▶';
+      b.classList.toggle('tocando', esse);
+    });
+    $('#pv-toggle').textContent = tocando ? '⏸' : '▶';
+  }
+  audio.addEventListener('play', atualizarPreviewUI);
+  audio.addEventListener('pause', atualizarPreviewUI);
+  audio.addEventListener('ended', () => { $('#pv-prog').value = 0; atualizarPreviewUI(); });
+  audio.addEventListener('timeupdate', () => { if (audio.duration) $('#pv-prog').value = Math.round((audio.currentTime / audio.duration) * 1000); });
+  $('#pv-prog').addEventListener('input', (e) => { if (audio.duration) audio.currentTime = (e.target.value / 1000) * audio.duration; });
+  $('#pv-toggle').addEventListener('click', () => (audio.paused ? audio.play() : audio.pause()));
+  $('#pv-fechar').addEventListener('click', () => { audio.pause(); previewId = null; audio.removeAttribute('src'); $('#preview').hidden = true; atualizarPreviewUI(); });
+
+  // ============================== Render geral / navegação ==============================
+  function posRender() { atualizarPreviewUI(); }
+  function renderTudo() { renderPlaylists(); renderEditor(); renderLib(); posRender(); }
+
+  function irPara(view) {
+    document.body.dataset.view = view;
+    $$('#nav button').forEach((b) => b.classList.toggle('ativo', b.dataset.goto === view));
+  }
+  $$('#nav button').forEach((b) => b.addEventListener('click', () => irPara(b.dataset.goto)));
+
+  // ============================== Eventos (delegação) ==============================
+  $('#lista-pl').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-pl]'); if (!b) return;
+    S.atualId = b.dataset.pl; renderTudo(); irPara('editor');
+  });
+  $('#btn-nova').addEventListener('click', abrirNovaPlaylist);
+
+  $('#editor').addEventListener('click', (e) => {
+    const pv = e.target.closest('[data-preview]'); if (pv) return tocarPreview(pv.dataset.preview);
+    const b = e.target.closest('[data-acao]'); if (!b) return;
+    const p = atual(); const linha = b.closest('.faixa');
+    switch (b.dataset.acao) {
+      case 'nova': return abrirNovaPlaylist();
+      case 'renomear': return renomear();
+      case 'apagar': return apagar();
+      case 'pessoas': return editarPessoas();
+      case 'tirar-pessoa': return tirarPessoa(b.dataset.id);
+      case 'remover': return removerFaixa(linha.dataset.id);
+      case 'subir': return reordenar(+linha.dataset.i, +linha.dataset.i - 1);
+      case 'descer': return reordenar(+linha.dataset.i, +linha.dataset.i + 1);
+      default: return p;
+    }
+  });
+
+  $('#lib-corpo').addEventListener('click', (e) => {
+    const pv = e.target.closest('[data-preview]');
+    if (pv) { e.preventDefault(); return tocarPreview(pv.dataset.preview); }
+    const alb = e.target.closest('[data-album]'); if (alb) return abrirAlbum(alb.dataset.album);
+    const b = e.target.closest('[data-acao]'); if (!b) return;
+    const album = S.albumPorId.get(S.albumAberto);
+    const naPlaylist = idsNaPlaylist();
+    switch (b.dataset.acao) {
+      case 'voltar': return fecharAlbum();
+      case 'mais': S.limite += 60; return renderLib();
+      case 'add-album': { e.preventDefault(); const f = (S.faixasPorAlbum.get(album.id) || []).filter((x) => !naPlaylist.has(x.id)); return adicionarFaixas(f, album, { incluido: true }); }
+      case 'add-sel': { const f = [...S.sel].map((id) => S.faixaPorId.get(id)).filter(Boolean); return adicionarFaixas(f, album); }
+      case 'add-faixa': { e.preventDefault(); return adicionarFaixas([S.faixaPorId.get(b.dataset.id)], album); }
+      case 'add-faixa-busca': return adicionarFaixas([S.faixaPorId.get(b.dataset.id)], null);
+      case 'revisado': return marcarRevisado([album.id], 'ignorado').then(() => { toast(`"${album.name}" marcado como revisado.`); renderLib(); });
+      case 'revisar-todos': {
+        const ids = albunsFiltrados().map((a) => a.id);
+        return confirmar('Marcar como revisados?', `${plural(ids.length, 'álbum', 'álbuns')} sai(rão) da lista de novidades.`, 'Marcar', '').then((ok) => ok && marcarRevisado(ids, 'ignorado').then(() => { toast('Marcados como revisados.'); renderLib(); }));
+      }
+      default: return null;
+    }
+  });
+  $('#lib-corpo').addEventListener('change', (e) => {
+    const cb = e.target.closest('[data-sel]'); if (!cb) return;
+    if (cb.checked) S.sel.add(cb.dataset.sel); else S.sel.delete(cb.dataset.sel);
+    renderAlbum(); posRender();
+  });
+
+  let tBusca = null;
+  $('#busca').addEventListener('input', (e) => {
+    clearTimeout(tBusca);
+    tBusca = setTimeout(() => { S.termo = e.target.value; S.limite = 60; S.albumAberto = null; renderLib(); posRender(); }, 150);
+  });
+  $$('.chip-f').forEach((b) => b.addEventListener('click', () => {
+    S.filtro = b.dataset.filtro; S.limite = 60; S.albumAberto = null;
+    $$('.chip-f').forEach((x) => x.classList.toggle('ativo', x === b));
+    renderLib(); posRender();
+  }));
+  document.addEventListener('keydown', (e) => {
+    if (e.key === '/' && !/^(INPUT|TEXTAREA)$/.test(document.activeElement.tagName)) { e.preventDefault(); irPara('lib'); $('#busca').focus(); }
+  });
+
+  // ============================== Carga e login ==============================
+  function indexarCache(cache) {
+    S.albuns = (cache.albuns || []).slice().sort((a, b) => String(b.criadoEm || '').localeCompare(String(a.criadoEm || '')));
+    S.albumPorId = new Map(S.albuns.map((a) => [a.id, a]));
+    S.faixasPorAlbum = new Map(); S.faixaPorId = new Map(); indiceFaixas = null;
+    (cache.arvore || []).forEach((n) => {
+      if (n.tipo !== 'faixa') return;
+      S.faixaPorId.set(n.id, n);
+      if (!S.faixasPorAlbum.has(n.paiId)) S.faixasPorAlbum.set(n.paiId, []);
+      S.faixasPorAlbum.get(n.paiId).push(n);
+    });
+  }
+
+  async function carregarTudo() {
+    const [cache, , nov] = await Promise.all([
+      api('GET', '/api/admin/cache'),
+      carregarPlaylists(),
+      api('GET', '/api/admin/novidades'),
+    ]);
+    indexarCache(cache);
+    S.novidadesIds = new Set((nov.novidades || []).map((a) => a.id));
+    $('#subtitulo').textContent = `${fmt(S.albuns.length)} álbuns no catálogo`;
+    renderTudo();
+    // Lista de pessoas: mais lenta e opcional — carrega por último, sem travar a tela.
+    api('GET', '/api/usuarios').then((r) => { S.usuarios = r.usuarios || []; renderEditor(); posRender(); }).catch(() => {});
+  }
+
+  function mostrarLogin(msg = '') {
+    $('#login').hidden = false; $('#btn-sair').hidden = true;
+    $('#login-erro').textContent = msg;
+    setTimeout(() => $('#login-senha').focus(), 30);
+  }
+
+  async function entrar(chave, { silencioso = false } = {}) {
+    CHAVE = chave;
+    try {
+      await carregarTudo();
+      try { localStorage.setItem(LS_CHAVE, chave); } catch (_) { /* modo privado */ }
+      $('#login').hidden = true; $('#btn-sair').hidden = false;
+      return true;
+    } catch (e) {
+      if (e.status === 403) { try { localStorage.removeItem(LS_CHAVE); } catch (_) { /* */ } mostrarLogin(silencioso ? '' : 'Senha incorreta.'); }
+      else { mostrarLogin(''); toast('Falha ao carregar: ' + e.message, 'erro'); }
+      return false;
     }
   }
 
-  // ---------- Carga inicial ----------
-  async function iniciar() {
-    try {
-      const [cacheResp] = await Promise.all([
-        apiGet('/api/admin/cache'),
-        carregarPlaylistAtual(),
-        carregarNovidades(),
-      ]);
-      cache = cacheResp;
-      document.getElementById('subtitle').textContent =
-        `${fmt((cache.albuns || []).length)} álbuns no catálogo`;
-      buscarAlbuns();
-    } catch (err) {
-      showBanner('error', 'Falha ao carregar a curadoria: ' + err.message + '. Confira se a URL tem <code>?chave=SUACHAVE</code> correta.');
-    }
-  }
-  iniciar();
+  $('#login-form').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const s = $('#login-senha').value.trim();
+    if (s) entrar(s);
+  });
+  $('#btn-sair').addEventListener('click', () => {
+    try { localStorage.removeItem(LS_CHAVE); } catch (_) { /* */ }
+    audio.pause(); location.reload();
+  });
+
+  (function iniciar() {
+    // Compatível com o link antigo (?chave=...): guarda a senha e limpa a URL.
+    const params = new URLSearchParams(location.search);
+    const daUrl = params.get('chave');
+    let guardada = '';
+    try { guardada = localStorage.getItem(LS_CHAVE) || ''; } catch (_) { /* modo privado */ }
+    if (daUrl) { history.replaceState(null, '', location.pathname); }
+    const chave = daUrl || guardada;
+    if (!chave) return mostrarLogin();
+    entrar(chave, { silencioso: true });
+  })();
 })();
 </script>
 </body>
