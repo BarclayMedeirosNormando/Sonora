@@ -4,12 +4,19 @@ class Track {
   final String title;
   final int sizeBytes;
   final String? paiId; // ID da pasta-pai — só vem preenchido quando veio da árvore completa (navegação de pastas)
+  // Preenchidos quando a faixa vem de uma playlist curada (o backend já
+  // entrega capa e nome do álbum prontos) -- assim o player não depende
+  // mais do cache da biblioteca inteira pra mostrar capa/álbum.
+  final String? capaId; // ID do arquivo de capa no Drive
+  final String albumNome;
 
   const Track({
     required this.id,
     required this.title,
     this.sizeBytes = 0,
     this.paiId,
+    this.capaId,
+    this.albumNome = '',
   });
 
   factory Track.fromJson(Map<String, dynamic> json) {
@@ -29,6 +36,8 @@ class Track {
         'title': title,
         'sizeBytes': sizeBytes,
         'paiId': paiId,
+        'capaId': capaId,
+        'albumNome': albumNome,
       };
 
   factory Track.fromLocalJson(Map<String, dynamic> json) {
@@ -40,7 +49,16 @@ class Track {
       // têm 'paiId' no JSON; o '?' + fallback null cobre esse caso sem
       // quebrar a restauração de filas salvas antigas.
       paiId: json['paiId'] as String?,
+      // Campos novos (v2.5.5) -- estados salvos antes não têm, cai no padrão.
+      capaId: json['capaId'] as String?,
+      albumNome: json['albumNome'] as String? ?? '',
     );
+  }
+
+  /// URL da capa (herdada da playlist curada), ou null se não tiver.
+  String? capaUrl(String apiKey) {
+    if (capaId == null) return null;
+    return 'https://www.googleapis.com/drive/v3/files/$capaId?alt=media&key=$apiKey';
   }
 
   /// URL de streaming via o proxy de mídia no Cloud Run (não mais direto

@@ -9,7 +9,7 @@ import '../models/playlist.dart';
 import '../services/api_service.dart';
 import '../services/device_id_service.dart';
 import '../services/player_service.dart';
-import 'pedido_screen.dart';
+import '../services/playlist_vistas_service.dart';
 import 'player_screen.dart';
 import 'playlist_screen.dart';
 
@@ -25,7 +25,7 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  late Future<List<PlaylistResumo>> _playlistsFuture;
+  late Future<_HomeDados> _playlistsFuture;
   String? _appId;
 
   @override
@@ -40,9 +40,22 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
-  Future<List<PlaylistResumo>> _carregarPlaylists() async {
+  Future<_HomeDados> _carregarPlaylists() async {
     final appId = await DeviceIdService.getOrCreateDeviceId();
-    return ApiService.obterPlaylists(appId);
+    final playlists = await ApiService.obterPlaylists(appId);
+    final novidades = await PlaylistVistasService.verificar(playlists);
+    return _HomeDados(playlists, novidades);
+  }
+
+  /// Ao voltar de uma playlist, reavalia só as novidades (o selo some
+  /// depois que o usuário abriu) sem refazer a chamada de rede.
+  Future<void> _aoVoltarDaPlaylist() async {
+    final dados = await _playlistsFuture;
+    final novidades = await PlaylistVistasService.verificar(dados.playlists);
+    if (!mounted) return;
+    setState(() {
+      _playlistsFuture = Future.value(_HomeDados(dados.playlists, novidades));
+    });
   }
 
   Future<void> _recarregar() async {
@@ -124,27 +137,20 @@ class _HomeScreenState extends State<HomeScreen> {
           padding: const EdgeInsets.only(bottom: 16),
           children: [
             const _ContinuarOuvindo(),
-            _SecaoPlaylists(future: _playlistsFuture),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-              child: OutlinedButton.icon(
-                icon: const Icon(Icons.chat_outlined, color: AppTheme.accent),
-                label: const Text(
-                  'Pedir música ou álbum',
-                  style: TextStyle(color: AppTheme.textPrimary),
-                ),
-                onPressed: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(builder: (_) => const PedidoScreen()),
-                  );
-                },
-              ),
-            ),
+            _SecaoPlaylists(future: _playlistsFuture, onVoltar: _aoVoltarDaPlaylist),
           ],
         ),
       ),
     );
   }
+}
+
+/// Resultado do carregamento da Home: as playlists + o que tem de novo.
+class _HomeDados {
+  final List<PlaylistResumo> playlists;
+  final Map<String, NovidadePlaylist> novidades;
+
+  const _HomeDados(this.playlists, this.novidades);
 }
 
 class _TituloSecao extends StatelessWidget {
@@ -240,13 +246,14 @@ class _ContinuarOuvindo extends StatelessWidget {
 /// antes), já que agora são o conteúdo principal da Home, não uma seção
 /// secundária.
 class _SecaoPlaylists extends StatelessWidget {
-  final Future<List<PlaylistResumo>> future;
+  final Future<_HomeDados> future;
+  final VoidCallback onVoltar;
 
-  const _SecaoPlaylists({required this.future});
+  const _SecaoPlaylists({required this.future, required this.onVoltar});
 
   @override
   Widget build(BuildContext context) {
-    return FutureBuilder<List<PlaylistResumo>>(
+    return FutureBuilder<_HomeDados>(
       future: future,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
@@ -269,7 +276,8 @@ class _SecaoPlaylists extends StatelessWidget {
           );
         }
 
-        final playlists = snapshot.data ?? [];
+        final dados = snapshot.data;
+        final playlists = dados?.playlists ?? [];
         if (playlists.isEmpty) {
           return const Padding(
             padding: EdgeInsets.fromLTRB(24, 40, 24, 0),
@@ -287,7 +295,13 @@ class _SecaoPlaylists extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const _TituloSecao('Suas playlists'),
-            ...playlists.map((p) => _PlaylistCard(playlist: p)),
+            ...playlists.map(
+              (p) => _PlaylistCard(
+                playlist: p,
+                novidade: dados?.novidades[p.id],
+                onVoltar: onVoltar,
+              ),
+            ),
           ],
         );
       },
@@ -297,12 +311,19 @@ class _SecaoPlaylists extends StatelessWidget {
 
 class _PlaylistCard extends StatelessWidget {
   final PlaylistResumo playlist;
+  final NovidadePlaylist? novidade;
+  final VoidCallback onVoltar;
 
-  const _PlaylistCard({required this.playlist});
+  const _PlaylistCard({
+    required this.playlist,
+    required this.novidade,
+    required this.onVoltar,
+  });
 
   @override
   Widget build(BuildContext context) {
     final capaUrl = playlist.capaUrl(AppConstants.driveApiKey);
+    final novidade = this.novidade;
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
@@ -314,7 +335,7 @@ class _PlaylistCard extends StatelessWidget {
               builder: (_) =>
                   PlaylistScreen(playlistId: playlist.id, nome: playlist.nome),
             ),
-          );
+          ).then((_) => onVoltar());
         },
         child: Container(
           padding: const EdgeInsets.all(10),
@@ -356,9 +377,17 @@ class _PlaylistCard extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 2),
-                    Text(
-                      '${playlist.totalFaixas} faixa${playlist.totalFaixas == 1 ? '' : 's'}',
-                      style: const TextStyle(color: AppTheme.textSecondary, fontSize: 12),
+                    Row(
+                      children: [
+                        Text(
+                          '${playlist.totalFaixas} faixa${playlist.totalFaixas == 1 ? '' : 's'}',
+                          style: const TextStyle(color: AppTheme.textSecondary, fontSize: 12),
+                        ),
+                        if (novidade != null) ...[
+                          const SizedBox(width: 8),
+                          _SeloNovidade(novidade: novidade),
+                        ],
+                      ],
                     ),
                   ],
                 ),
@@ -366,6 +395,37 @@ class _PlaylistCard extends StatelessWidget {
               const Icon(Icons.chevron_right, color: AppTheme.textSecondary),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Selo do card: "Playlist nova" ou "N músicas novas".
+class _SeloNovidade extends StatelessWidget {
+  final NovidadePlaylist novidade;
+
+  const _SeloNovidade({required this.novidade});
+
+  @override
+  Widget build(BuildContext context) {
+    final n = novidade.novas;
+    final plural = n == 1 ? '' : 's';
+    final texto = novidade.playlistNova
+        ? 'Playlist nova'
+        : '$n música$plural nova$plural';
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      decoration: BoxDecoration(
+        color: AppTheme.accent,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Text(
+        texto,
+        style: const TextStyle(
+          color: Colors.black,
+          fontSize: 11,
+          fontWeight: FontWeight.bold,
         ),
       ),
     );

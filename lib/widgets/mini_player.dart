@@ -5,7 +5,6 @@ import 'package:provider/provider.dart';
 import '../core/constants.dart';
 import '../core/theme.dart';
 import '../screens/player_screen.dart';
-import '../services/library_cache_service.dart';
 import '../services/player_service.dart';
 
 /// Barra fixa na parte inferior das telas com a faixa atual e play/pause.
@@ -22,9 +21,7 @@ class MiniPlayer extends StatelessWidget {
         final faixa = player.faixaAtual;
         if (faixa == null) return const SizedBox.shrink();
 
-        final album =
-            faixa.paiId != null ? LibraryCacheService.albumPorId(faixa.paiId!) : null;
-        final capaUrl = album?.capaUrl(AppConstants.driveApiKey);
+        final capaUrl = faixa.capaUrl(AppConstants.driveApiKey);
 
         return InkWell(
           onTap: () {

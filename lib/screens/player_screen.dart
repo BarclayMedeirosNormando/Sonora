@@ -5,8 +5,6 @@ import 'package:provider/provider.dart';
 
 import '../core/constants.dart';
 import '../core/theme.dart';
-import '../services/favoritos_service.dart';
-import '../services/library_cache_service.dart';
 import '../services/player_service.dart';
 import 'fila_screen.dart';
 
@@ -53,28 +51,6 @@ class PlayerScreen extends StatelessWidget {
       appBar: AppBar(
         title: const Text('Tocando agora'),
         actions: [
-          // Favoritar o álbum da faixa atual sem precisar sair do player —
-          // reaproveita o mesmo FavoritosService/ícone de estrela que já
-          // existe no FolderScreen (favorito é por álbum, não por faixa).
-          Consumer2<PlayerService, FavoritosService>(
-            builder: (context, player, favoritos, _) {
-              final faixa = player.faixaAtual;
-              final album = faixa?.paiId != null
-                  ? LibraryCacheService.albumPorId(faixa!.paiId!)
-                  : null;
-              if (album == null) return const SizedBox.shrink();
-
-              final ehFavorito = favoritos.ehFavorito(album.id);
-              return IconButton(
-                icon: Icon(
-                  ehFavorito ? Icons.star : Icons.star_border,
-                  color: ehFavorito ? AppTheme.accent : null,
-                ),
-                tooltip: ehFavorito ? 'Remover álbum dos favoritos' : 'Favoritar álbum',
-                onPressed: () => favoritos.alternar(album.id, album.displayName),
-              );
-            },
-          ),
           Consumer<PlayerService>(
             builder: (context, player, _) => IconButton(
               icon: Icon(
@@ -117,10 +93,7 @@ class PlayerScreen extends StatelessWidget {
             );
           }
 
-          final album = faixa.paiId != null
-              ? LibraryCacheService.albumPorId(faixa.paiId!)
-              : null;
-          final capaUrl = album?.capaUrl(AppConstants.driveApiKey);
+          final capaUrl = faixa.capaUrl(AppConstants.driveApiKey);
           const placeholder = Center(
             child: Icon(Icons.album, size: 96, color: AppTheme.textSecondary),
           );
@@ -177,10 +150,10 @@ class PlayerScreen extends StatelessWidget {
                           fontWeight: FontWeight.bold,
                         ),
                       ),
-                      if (album != null) ...[
+                      if (faixa.albumNome.isNotEmpty) ...[
                         const SizedBox(height: 4),
                         Text(
-                          album.displayName,
+                          faixa.albumNome,
                           textAlign: TextAlign.center,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,

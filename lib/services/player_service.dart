@@ -12,7 +12,6 @@ import '../models/track.dart';
 import 'api_service.dart';
 import 'device_id_service.dart';
 import 'download_service.dart';
-import 'library_cache_service.dart';
 
 /// Estado e controle da reprodução: fila de faixas, play/pause, avançar/
 /// voltar, reordenar fila, "tocar a seguir", sleep timer e restaurar de
@@ -93,15 +92,12 @@ class PlayerService extends ChangeNotifier with WidgetsBindingObserver {
     // lockscreen etc) — sem artUri a notificação fica com ícone genérico
     // em vez da capa real do álbum, o que faz ela parecer "mais pobre"
     // do que apps tipo YouTube Music/Spotify.
-    final album = track.paiId != null
-        ? LibraryCacheService.albumPorId(track.paiId!)
-        : null;
-    final capaUrl = album?.capaUrl(AppConstants.driveApiKey);
+    final capaUrl = track.capaUrl(AppConstants.driveApiKey);
     final tag = MediaItem(
       id: track.id,
       title: track.displayTitle,
       album: 'Sonora',
-      artist: album?.displayName,
+      artist: track.albumNome.isNotEmpty ? track.albumNome : null,
       artUri: capaUrl != null ? Uri.parse(capaUrl) : null,
     );
     final local = _downloadService?.caminhoLocal(track.id);
@@ -158,14 +154,12 @@ class PlayerService extends ChangeNotifier with WidgetsBindingObserver {
   void _registrarPlayDaFaixaAtual() {
     final faixa = faixaAtual;
     if (faixa == null) return;
-    final album =
-        faixa.paiId != null ? LibraryCacheService.albumPorId(faixa.paiId!) : null;
     DeviceIdService.getOrCreateDeviceId().then((appId) {
       ApiService.registrarPlay(
         appId: appId,
         faixaId: faixa.id,
         faixaNome: faixa.displayTitle,
-        albumNome: album?.displayName ?? '',
+        albumNome: faixa.albumNome,
       );
     });
   }
