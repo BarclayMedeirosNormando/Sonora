@@ -17,7 +17,9 @@ import 'download_service.dart';
 ///
 /// Downloads só acontecem no Wi-Fi (ou cabo) pra não gastar o pacote de
 /// dados do usuário -- se ligar o modo offline no 4G/5G, fica marcado e o
-/// download começa assim que o aparelho entrar num Wi-Fi. Só baixa com o
+/// download começa assim que o aparelho entrar num Wi-Fi. O usuário pode
+/// ligar a chave "baixar também com dados móveis" (desligada por padrão).
+/// Baixa 3 faixas ao mesmo tempo. Só baixa com o
 /// app aberto (não existe serviço de download em segundo plano).
 ///
 /// Persistido: só { playlistId: [fileId, ...] } das playlists com o modo
@@ -25,6 +27,10 @@ import 'download_service.dart';
 /// sincronização, que roda ao abrir a Home e ao abrir a playlist.
 class OfflinePlaylistService extends ChangeNotifier {
   static const _prefsKey = 'sonora_offline_playlists';
+  static const _prefsKeyDados = 'sonora_offline_usar_dados';
+
+  /// Quantas faixas baixam ao mesmo tempo.
+  static const _paralelo = 3;
 
   final DownloadService _downloads;
 
@@ -37,6 +43,7 @@ class OfflinePlaylistService extends ChangeNotifier {
   bool _processando = false;
   bool _temWifi = false;
   bool _temRede = true;
+  bool _usarDados = false;
   StreamSubscription<List<ConnectivityResult>>? _assinatura;
 
   OfflinePlaylistService(this._downloads);
@@ -46,6 +53,28 @@ class OfflinePlaylistService extends ChangeNotifier {
 
   /// Qualquer conexão (Wi-Fi ou dados móveis). Falso = modo avião/sem sinal.
   bool get temRede => _temRede;
+
+  /// Chave "baixar também com dados móveis" (desligada por padrão).
+  bool get usarDadosMoveis => _usarDados;
+
+  /// Pode baixar agora: Wi-Fi/cabo sempre; dados móveis só se o usuário
+  /// ligou a chave.
+  bool get podeBaixarAgora => _temWifi || (_usarDados && _temRede);
+
+  /// Liga/desliga o download com dados móveis. Ao ligar, retoma o que
+  /// estiver pendente.
+  Future<void> definirUsarDadosMoveis(bool valor) async {
+    if (_usarDados == valor) return;
+    _usarDados = valor;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(_prefsKeyDados, valor);
+    } catch (_) {
+      // Não salvou agora -- vale só até fechar o app.
+    }
+    notifyListeners();
+    if (valor) _processar();
+  }
 
   bool estaAtiva(String playlistId) => _ativas.containsKey(playlistId);
 
@@ -76,6 +105,7 @@ class OfflinePlaylistService extends ChangeNotifier {
           _ativas[e.key] = (e.value as List).cast<String>().toList();
         }
       }
+      _usarDados = prefs.getBool(_prefsKeyDados) ?? false;
     } catch (_) {
       // Estado salvo corrompido -- começa sem nenhuma playlist offline.
     }
@@ -95,11 +125,11 @@ class OfflinePlaylistService extends ChangeNotifier {
   void _aplicarConectividade(List<ConnectivityResult> resultado, {bool notificar = true}) {
     final wifi = resultado.contains(ConnectivityResult.wifi) ||
         resultado.contains(ConnectivityResult.ethernet);
-    final ganhouWifi = wifi && !_temWifi;
+    final podiaBaixar = podeBaixarAgora;
     _temWifi = wifi;
     _temRede = resultado.any((c) => c != ConnectivityResult.none);
     if (notificar) notifyListeners();
-    if (ganhouWifi) _processar();
+    if (!podiaBaixar && podeBaixarAgora) _processar();
   }
 
   /// Liga o modo offline da playlist e começa a baixar (se estiver no Wi-Fi).
@@ -209,8 +239,9 @@ class OfflinePlaylistService extends ChangeNotifier {
     return null;
   }
 
-  /// Baixa, uma faixa por vez, tudo que está pendente nas playlists com o
-  /// modo ligado -- enquanto houver Wi-Fi. Só uma execução por vez.
+  /// Baixa tudo que está pendente nas playlists com o modo ligado, 3 faixas
+  /// ao mesmo tempo, enquanto puder baixar (Wi-Fi, ou dados móveis se o
+  /// usuário ligou a chave). Só uma execução por vez.
   Future<void> _processar() async {
     if (_processando) return;
     _processando = true;
@@ -218,8 +249,10 @@ class OfflinePlaylistService extends ChangeNotifier {
 
     final jaTentadas = <String>{};
     var falhasSeguidas = 0;
-    try {
-      while (_temWifi) {
+    var parar = false;
+
+    Future<void> trabalhador() async {
+      while (!parar && podeBaixarAgora) {
         final proxima = _proximaPendente(jaTentadas);
         if (proxima == null) break;
         jaTentadas.add(proxima.id);
@@ -228,8 +261,8 @@ class OfflinePlaylistService extends ChangeNotifier {
 
         if (_downloads.statusDe(proxima.id) == StatusDownload.erro) {
           // 3 erros seguidos = provavelmente sem rede de verdade / sem
-          // espaço; para e tenta de novo na próxima sincronização.
-          if (++falhasSeguidas >= 3) break;
+          // espaço; para todos e tenta de novo na próxima sincronização.
+          if (++falhasSeguidas >= 3) parar = true;
         } else {
           falhasSeguidas = 0;
           // A playlist pode ter sido desligada enquanto essa faixa baixava.
@@ -237,6 +270,10 @@ class OfflinePlaylistService extends ChangeNotifier {
         }
         notifyListeners();
       }
+    }
+
+    try {
+      await Future.wait(List.generate(_paralelo, (_) => trabalhador()));
     } finally {
       _processando = false;
       notifyListeners();

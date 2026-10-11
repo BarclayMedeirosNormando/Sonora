@@ -111,27 +111,35 @@ class DownloadService extends ChangeNotifier {
     _progresso[track.id] = 0.0;
     notifyListeners();
 
+    final cliente = http.Client();
     try {
       final pasta = await _pastaDownloads();
       final destino = File('${pasta.path}/${track.id}.mp3');
 
       final appId = await DeviceIdService.getOrCreateDeviceId();
       final uri = Uri.parse(track.streamUrl(AppConstants.cloudRunBaseUrl, appId));
-      final resposta = await http.Client().send(http.Request('GET', uri));
+      final resposta = await cliente.send(http.Request('GET', uri));
       if (resposta.statusCode != 200) {
         throw Exception('HTTP ${resposta.statusCode}');
       }
 
       final total = resposta.contentLength ?? 0;
       var recebido = 0;
+      var ultimoAviso = 0.0;
       final sink = destino.openWrite();
 
       await for (final pedaco in resposta.stream) {
         sink.add(pedaco);
         recebido += pedaco.length;
         if (total > 0) {
-          _progresso[track.id] = recebido / total;
-          notifyListeners();
+          final novo = recebido / total;
+          _progresso[track.id] = novo;
+          // Só avisa a tela a cada ~2%: com vários downloads ao mesmo
+          // tempo, avisar a cada pedaço recebido travaria a lista.
+          if (novo - ultimoAviso >= 0.02 || novo >= 1.0) {
+            ultimoAviso = novo;
+            notifyListeners();
+          }
         }
       }
       await sink.close();
@@ -147,6 +155,8 @@ class DownloadService extends ChangeNotifier {
       _progresso.remove(track.id);
       _comErro.add(track.id);
       notifyListeners();
+    } finally {
+      cliente.close();
     }
   }
 

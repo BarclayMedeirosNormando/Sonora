@@ -348,7 +348,7 @@ class _BotaoOffline extends StatelessWidget {
       mensagens.showSnackBar(
         SnackBar(
           content: Text(
-            offline.temWifi
+            offline.podeBaixarAgora
                 ? 'Baixando a playlist pra ouvir offline...'
                 : 'Modo offline ligado. O download começa quando o aparelho estiver no Wi-Fi.',
           ),
@@ -406,6 +406,34 @@ class _StatusOffline extends StatelessWidget {
 
   const _StatusOffline({required this.playlistId});
 
+  Future<void> _alternarDados(BuildContext context, bool ligar) async {
+    final offline = context.read<OfflinePlaylistService>();
+    if (!ligar) {
+      await offline.definirUsarDadosMoveis(false);
+      return;
+    }
+    final confirmar = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Baixar com dados móveis?'),
+        content: const Text(
+          'Cada música tem alguns MB, então uma playlist grande pode gastar bastante do seu pacote de internet. Recomendamos deixar desligado e baixar no Wi-Fi.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancelar'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Ligar'),
+          ),
+        ],
+      ),
+    );
+    if (confirmar == true) await offline.definirUsarDadosMoveis(true);
+  }
+
   @override
   Widget build(BuildContext context) {
     final offline = context.watch<OfflinePlaylistService>();
@@ -417,7 +445,7 @@ class _StatusOffline extends StatelessWidget {
     final String texto;
     if (completa) {
       texto = 'Disponível offline ($total músicas)';
-    } else if (offline.temWifi) {
+    } else if (offline.podeBaixarAgora) {
       texto = 'Baixando pra ouvir offline: $baixadas de $total';
     } else {
       texto = '$baixadas de $total baixadas. O resto baixa quando estiver no Wi-Fi.';
@@ -459,6 +487,24 @@ class _StatusOffline extends StatelessWidget {
                 backgroundColor: AppTheme.surfaceHigh,
                 valueColor: const AlwaysStoppedAnimation(AppTheme.accent),
               ),
+            ),
+          ],
+          if (!completa) ...[
+            const SizedBox(height: 4),
+            Row(
+              children: [
+                const Expanded(
+                  child: Text(
+                    'Baixar também com dados móveis',
+                    style: TextStyle(color: AppTheme.textSecondary, fontSize: 12),
+                  ),
+                ),
+                Switch(
+                  value: offline.usarDadosMoveis,
+                  activeTrackColor: AppTheme.accent,
+                  onChanged: (v) => _alternarDados(context, v),
+                ),
+              ],
             ),
           ],
         ],

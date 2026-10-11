@@ -632,6 +632,61 @@ async function enviarCapa(req, res, fileId) {
   }
 }
 
+/**
+ * Aquecimento do cache de midia: quando faixas entram numa playlist, o
+ * servidor copia o MP3 do Drive pro bucket em segundo plano, ANTES de
+ * alguem pedir. Assim o download offline do cliente (que baixa a playlist
+ * inteira de uma vez) nao espera o Drive faixa por faixa. Limites de
+ * proposito: 2 copias ao mesmo tempo, fila de no maximo 300 faixas
+ * (o excedente simplesmente continua sendo copiado na primeira vez que
+ * alguem tocar, como sempre foi) e nada de arquivo que ja esta no bucket.
+ * Desliga com AQUECER_CACHE=0. Observacao: o Cloud Run so garante CPU
+ * fora de uma requisicao com "CPU sempre alocada" (--no-cpu-throttling);
+ * sem isso o aquecimento anda mais devagar, mas nunca atrapalha nada.
+ */
+const AQUECER_ATIVO = process.env.AQUECER_CACHE !== '0';
+const AQUECER_CONCORRENCIA = 2;
+const AQUECER_FILA_MAX = 300;
+const filaAquecer = [];
+const pendentesAquecer = new Set();
+let trabalhadoresAquecer = 0;
+
+async function trabalhadorAquecer() {
+  trabalhadoresAquecer++;
+  try {
+    while (filaAquecer.length) {
+      const fileId = filaAquecer.shift();
+      try {
+        const objeto = getStorage().bucket(MIDIA_BUCKET).file(`midia/${fileId}.mp3`);
+        const [existe] = await objeto.exists();
+        if (!existe) {
+          const arquivo = await baixarDoDrive(fileId, { maxBytes: MAX_BYTES_AUDIO, validar: ehAudio });
+          await objeto.save(arquivo.bytes, { contentType: 'audio/mpeg', resumable: false });
+        }
+      } catch (erro) {
+        console.error(`Aviso: não consegui aquecer o cache de ${fileId}:`, (erro && erro.message) || erro);
+      } finally {
+        pendentesAquecer.delete(fileId);
+      }
+    }
+  } finally {
+    trabalhadoresAquecer--;
+  }
+}
+
+function aquecerCache(fileIds) {
+  if (!AQUECER_ATIVO || !MIDIA_BUCKET || !Array.isArray(fileIds)) return;
+  for (const fileId of fileIds) {
+    if (filaAquecer.length >= AQUECER_FILA_MAX) break;
+    if (!/^[a-zA-Z0-9_-]+$/.test(fileId || '') || pendentesAquecer.has(fileId)) continue;
+    pendentesAquecer.add(fileId);
+    filaAquecer.push(fileId);
+  }
+  for (let i = trabalhadoresAquecer; i < AQUECER_CONCORRENCIA && i < filaAquecer.length; i++) {
+    trabalhadorAquecer().catch(() => {});
+  }
+}
+
 app.get('/midia/:fileId', limiteMidia, exigirAppIdLiberado, async (req, res) => {
   await enviarMidia(req, res, req.params.fileId);
 });
@@ -1330,6 +1385,7 @@ app.post('/api/admin/playlists/:id/faixas', limitePainel, async (req, res) => {
     // Primeira faixa adicionada define a capa da playlist, se ainda não tiver uma.
     if (!doc.data().capaId && capaId) atualizacao.capaId = String(capaId);
     await ref.update(atualizacao);
+    aquecerCache([String(fileId)]);
     return res.json({ ok: true });
   } catch (erro) {
     console.error('Erro em POST /api/admin/playlists/:id/faixas:', erro);
@@ -1358,6 +1414,7 @@ app.post('/api/admin/playlists/:id/faixas-lote', limitePainel, async (req, res) 
     let adicionadas = 0;
     let jaExistiam = 0;
     let primeiraCapa = null;
+    const novas = [];
     for (const f of entrada) {
       if (!f || !f.fileId || !f.nome) continue;
       const fileId = String(f.fileId);
@@ -1371,11 +1428,13 @@ app.post('/api/admin/playlists/:id/faixas-lote', limitePainel, async (req, res) 
         capaId: f.capaId ? String(f.capaId) : null,
       });
       if (!primeiraCapa && f.capaId) primeiraCapa = String(f.capaId);
+      novas.push(fileId);
       adicionadas++;
     }
     const atualizacao = { faixas, atualizadoEm: new Date().toISOString() };
     if (!dados.capaId && primeiraCapa) atualizacao.capaId = primeiraCapa;
     if (adicionadas > 0) await ref.update(atualizacao);
+    aquecerCache(novas);
     return res.json({ ok: true, adicionadas, jaExistiam, playlist: { id: doc.id, ...dados, ...atualizacao } });
   } catch (erro) {
     console.error('Erro em POST /api/admin/playlists/:id/faixas-lote:', erro);
@@ -1728,6 +1787,7 @@ app.post('/api/cliente/playlists/:id/faixas-lote', limiteCliente, exigirCliente,
     let jaExistiam = 0;
     let cheia = false;
     let primeiraCapa = null;
+    const novas = [];
     for (const f of entrada) {
       if (!f || !f.fileId || !f.nome) continue;
       const fileId = String(f.fileId);
@@ -1742,11 +1802,13 @@ app.post('/api/cliente/playlists/:id/faixas-lote', limiteCliente, exigirCliente,
         capaId: f.capaId ? String(f.capaId) : null,
       });
       if (!primeiraCapa && f.capaId) primeiraCapa = String(f.capaId);
+      novas.push(fileId);
       adicionadas++;
     }
     const atualizacao = { faixas, atualizadoEm: new Date().toISOString() };
     if (!p.dados.capaId && primeiraCapa) atualizacao.capaId = primeiraCapa;
     if (adicionadas > 0) await p.ref.update(atualizacao);
+    aquecerCache(novas);
     return res.json({
       ok: true, adicionadas, jaExistiam, cheia,
       playlist: { id: p.doc.id, ...p.dados, ...atualizacao },
