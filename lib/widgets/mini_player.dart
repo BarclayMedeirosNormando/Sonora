@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../core/constants.dart';
+import '../services/device_id_service.dart';
 import '../core/theme.dart';
 import '../screens/player_screen.dart';
 import '../services/player_service.dart';
@@ -23,7 +24,7 @@ class MiniPlayer extends StatelessWidget {
         final faixa = player.faixaAtual;
         if (faixa == null) return const SizedBox.shrink();
 
-        final capaUrl = faixa.capaUrl(AppConstants.driveApiKey);
+        final capaUrl = faixa.capaUrl(AppConstants.cloudRunBaseUrl, DeviceIdService.idEmCache);
         const capaPadrao = CapaPlaceholder(semente: 'sonora', tamanhoIcone: 18);
 
         return Padding(

@@ -38,10 +38,10 @@ class Album {
     return limpo.isEmpty ? name : limpo;
   }
 
-  /// URL pra baixar a imagem de capa direto do Drive, ou null se a pasta
+  /// URL da capa, servida pelo backend (Cloud Run), ou null se a pasta
   /// não tiver nenhuma imagem dentro.
-  String? capaUrl(String apiKey) {
+  String? capaUrl(String cloudRunBaseUrl, String appId) {
     if (capaId == null) return null;
-    return 'https://www.googleapis.com/drive/v3/files/$capaId?alt=media&key=$apiKey';
+    return '$cloudRunBaseUrl/capa/$capaId?appId=${Uri.encodeQueryComponent(appId)}';
   }
 }

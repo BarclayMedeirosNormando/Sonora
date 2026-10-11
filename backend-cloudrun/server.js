@@ -45,6 +45,7 @@
 
 const stream = require('stream');
 const path = require('path');
+const crypto = require('crypto');
 const express = require('express');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
@@ -67,7 +68,21 @@ app.set('trust proxy', 1);
 const PLANILHA_ID = process.env.PLANILHA_ID || '1UyH7VLTSU3pIRXH1DOiPSBB1vavy_qyRo65y07DEyiE';
 const ABA_NOME = process.env.ABA_NOME || 'Página1'; // conferir o nome real da aba na planilha
 const CACHE_FILE_ID = process.env.CACHE_FILE_ID || '1Ks8PvbUfQqg75lHty2qb9bnoIvt7c4pP';
-const DRIVE_API_KEY = process.env.DRIVE_API_KEY || '';
+// (10/10/2026) A DRIVE_API_KEY foi REMOVIDA: o servidor agora le tudo do
+// Drive pela conta de servico (ver baixarDoDrive), entao nenhuma chave de
+// API precisa existir -- nem no codigo, nem no APK, nem nas env vars.
+
+// Tamanhos maximos (bytes). O proxy carrega o arquivo inteiro na memoria
+// (instancia de 1Gi, ate 80 requisicoes simultaneas), entao um fileId
+// errado/malicioso apontando pra um arquivo gigante nao pode passar.
+const MAX_BYTES_AUDIO = 100 * 1024 * 1024;
+const MAX_BYTES_CAPA = 10 * 1024 * 1024;
+// Validade das URLs assinadas do bucket. Cada seek/Range volta pelo
+// /midia e ganha uma URL nova, entao nao precisa ser longa.
+const URL_ASSINADA_TTL_MS = 30 * 60 * 1000;
+// Formato aceito de App_ID: codigo curto atual (6 caracteres) e os UUIDs
+// antigos. Barra lixo antes de virar linha nova na planilha.
+const APP_ID_FORMATO = /^[A-Za-z0-9-]{4,64}$/;
 
 // Bucket do Cloud Storage usado como cache de mídia (ver rota /midia
 // abaixo) — precisa existir e a conta de serviço do Cloud Run precisa
@@ -130,6 +145,14 @@ const limiteMidia = rateLimit({
   message: { erro: 'Muitas requisicoes. Aguarde um pouco.' },
 });
 
+const limiteCapa = rateLimit({
+  windowMs: 5 * 60 * 1000,
+  max: 2000, // listas e curadoria carregam dezenas de capas de uma vez
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { erro: 'Muitas requisicoes. Aguarde um pouco.' },
+});
+
 let sheetsClientPromise = null;
 let driveClientPromise = null;
 let firestoreClientPromise = null;
@@ -159,6 +182,19 @@ function getStorage() {
   return storageClient;
 }
 
+/**
+ * Compara a chave enviada com a esperada em tempo constante. FALHA
+ * FECHADA: se a variavel de ambiente da chave nao estiver configurada
+ * (ex.: um deploy com --set-env-vars que sobrescreveu as outras), o
+ * acesso e NEGADO -- antes, chave vazia significava painel aberto.
+ */
+function chavesIguais(enviada, esperada) {
+  if (!esperada || typeof enviada !== 'string' || !enviada) return false;
+  const a = crypto.createHash('sha256').update(enviada).digest();
+  const b = crypto.createHash('sha256').update(esperada).digest();
+  return crypto.timingSafeEqual(a, b);
+}
+
 function chavePainelValida(req) {
   // Aceita a chave tanto por query string (?chave=X -- necessario pra
   // navegacao normal do /painel, que e um link clicavel) quanto por
@@ -166,8 +202,7 @@ function chavePainelValida(req) {
   // proprio painel.html via JS, pra nao deixar a chave espalhada nos
   // logs de acesso do Cloud Run, que registram a URL completa mas nao
   // headers customizados).
-  const chaveEnviada = req.get('X-Painel-Chave') || req.query.chave;
-  return !PAINEL_CHAVE || chaveEnviada === PAINEL_CHAVE;
+  return chavesIguais(req.get('X-Painel-Chave') || req.query.chave, PAINEL_CHAVE);
 }
 
 /**
@@ -297,6 +332,9 @@ app.get('/validar', limiteValidar, async (req, res) => {
   if (!appId) {
     return res.json({ erro: 'Parâmetro id ausente.' });
   }
+  if (typeof appId !== 'string' || !APP_ID_FORMATO.test(appId)) {
+    return res.json({ erro: 'Formato de id inválido.' });
+  }
 
   try {
     const sheets = await getSheetsClient();
@@ -340,14 +378,8 @@ app.get('/validar', limiteValidar, async (req, res) => {
  */
 app.get('/cache', limiteMidia, exigirAppIdLiberado, async (req, res) => {
   try {
-    const url =
-      `https://www.googleapis.com/drive/v3/files/${CACHE_FILE_ID}` +
-      `?alt=media&key=${DRIVE_API_KEY}`;
-    const respostaDrive = await fetch(url);
-    if (!respostaDrive.ok) {
-      throw new Error(`Drive respondeu HTTP ${respostaDrive.status}`);
-    }
-    const texto = await respostaDrive.text();
+    const { bytes } = await baixarDoDrive(CACHE_FILE_ID);
+    const texto = bytes.toString('utf8');
     res.set('Content-Type', 'application/json; charset=utf-8');
     res.set('Access-Control-Allow-Origin', '*'); // libera CORS pro Flutter Web
     // Cache HTTP curto (5 min): o app ja tem seu proprio TTL de 1h no
@@ -391,6 +423,123 @@ app.get('/cache', limiteMidia, exigirAppIdLiberado, async (req, res) => {
  * enfim tinha terminado por trás) funcionava normal. Baixar tudo pra um
  * Buffer primeiro elimina essa dependência entre as duas coisas.
  */
+function erroHttp(status, mensagem) {
+  const erro = new Error(mensagem);
+  erro.httpStatus = status;
+  return erro;
+}
+
+/** Status HTTP pra devolver ao cliente a partir de um erro (Drive/Storage/validacao). */
+function statusDoErro(erro) {
+  if (erro && erro.httpStatus) return erro.httpStatus;
+  const codigo = erro && (erro.code || (erro.response && erro.response.status));
+  // Drive responde 403 pra arquivo que a conta de servico nao enxerga: pro
+  // cliente isso e simplesmente "nao existe".
+  if (codigo === 404 || codigo === 403) return 404;
+  return 502;
+}
+
+/**
+ * Baixa um arquivo do Drive INTEIRO pra memoria usando a CONTA DE SERVICO
+ * do Cloud Run -- sem chave de API e sem exigir que o arquivo esteja
+ * compartilhado como "qualquer pessoa com o link". E isso que permite
+ * deixar a pasta do Drive restrita.
+ * [validar] recebe os metadados ({ name, mimeType, size }) e decide se o
+ * tipo e aceito; [maxBytes] barra arquivos grandes demais.
+ */
+async function baixarDoDrive(fileId, { maxBytes = 0, validar = null } = {}) {
+  const drive = await getDriveClient();
+  const meta = await drive.files.get({ fileId, fields: 'id,name,mimeType,size' });
+  const dados = meta.data;
+  if (validar && !validar(dados)) {
+    throw erroHttp(415, 'Tipo de arquivo não permitido.');
+  }
+  if (maxBytes && Number(dados.size || 0) > maxBytes) {
+    throw erroHttp(413, 'Arquivo grande demais.');
+  }
+  const resposta = await drive.files.get({ fileId, alt: 'media' }, { responseType: 'arraybuffer' });
+  return { bytes: Buffer.from(resposta.data), mimeType: dados.mimeType, nome: dados.name };
+}
+
+const ehAudio = (m) =>
+  String(m.mimeType || '').startsWith('audio/') || /\.mp3$/i.test(String(m.name || ''));
+const ehImagem = (m) => String(m.mimeType || '').startsWith('image/');
+
+/** Descobre o tipo de uma imagem pelos primeiros bytes (evita ler metadados do bucket). */
+function tipoDaImagem(bytes) {
+  if (bytes.length > 3 && bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e) return 'image/png';
+  if (bytes.length > 3 && bytes[0] === 0x47 && bytes[1] === 0x49 && bytes[2] === 0x46) return 'image/gif';
+  if (bytes.length > 12 && bytes.toString('ascii', 0, 4) === 'RIFF' && bytes.toString('ascii', 8, 12) === 'WEBP') {
+    return 'image/webp';
+  }
+  return 'image/jpeg';
+}
+
+/** Responde com os bytes, com suporte a Range (seek no player). */
+function enviarBuffer(req, res, bytes, contentType) {
+  res.set('Content-Type', contentType);
+  res.set('Accept-Ranges', 'bytes');
+  const total = bytes.length;
+  const combinacao = req.headers.range && /^bytes=(\d*)-(\d*)$/.exec(req.headers.range);
+  if (combinacao && (combinacao[1] || combinacao[2])) {
+    let inicio;
+    let fim;
+    if (combinacao[1]) {
+      inicio = parseInt(combinacao[1], 10);
+      fim = combinacao[2] ? Math.min(parseInt(combinacao[2], 10), total - 1) : total - 1;
+    } else {
+      inicio = Math.max(0, total - parseInt(combinacao[2], 10)); // "bytes=-N": ultimos N bytes
+      fim = total - 1;
+    }
+    if (inicio > fim || inicio >= total) {
+      res.set('Content-Range', `bytes */${total}`);
+      return res.status(416).end();
+    }
+    res.status(206);
+    res.set('Content-Range', `bytes ${inicio}-${fim}/${total}`);
+    res.set('Content-Length', String(fim - inicio + 1));
+    return res.send(bytes.subarray(inicio, fim + 1));
+  }
+  res.set('Content-Length', String(total));
+  return res.send(bytes);
+}
+
+let avisouFalhaAssinatura = false;
+
+/**
+ * Faixa ja em cache: o objeto do bucket e PRIVADO, entao o cliente e
+ * mandado (302) pra uma URL ASSINADA que vale 30 minutos -- so quem
+ * passou pelo gate de App_ID do /midia chega nela, e ela expira. O
+ * download continua saindo direto do Storage (suporta Range nativo).
+ * Se a assinatura falhar (falta o papel Service Account Token Creator
+ * da propria conta de servico -- ver README), cai pro proxy: o servidor
+ * le o objeto e entrega os bytes, mais lento/caro mas sem quebrar a
+ * reproducao.
+ */
+async function redirecionarParaBucket(req, res, objeto, contentType) {
+  try {
+    const [url] = await objeto.getSignedUrl({
+      version: 'v4',
+      action: 'read',
+      expires: Date.now() + URL_ASSINADA_TTL_MS,
+    });
+    res.set('Cache-Control', 'private, no-store');
+    return res.redirect(302, url);
+  } catch (erroAssinatura) {
+    if (!avisouFalhaAssinatura) {
+      avisouFalhaAssinatura = true;
+      console.error('Aviso: falha ao assinar URL do bucket, usando o proxy:', erroAssinatura);
+      registrarAlerta(
+        '/midia',
+        'Falha ao assinar URL do bucket (confira o papel Service Account Token Creator): ' +
+          ((erroAssinatura && erroAssinatura.message) || erroAssinatura)
+      );
+    }
+    const [bytes] = await objeto.download();
+    return enviarBuffer(req, res, bytes, contentType);
+  }
+}
+
 /**
  * Envia os bytes de uma faixa (cache "preguiçoso" no Cloud Storage) —
  * lógica compartilhada entre /midia/:fileId (app, exige appId liberado)
@@ -414,51 +563,82 @@ async function enviarMidia(req, res, fileId) {
     const [existe] = await objeto.exists();
 
     if (existe) {
-      const urlPublica = `https://storage.googleapis.com/${MIDIA_BUCKET}/${nomeObjeto}`;
-      return res.redirect(302, urlPublica);
+      return await redirecionarParaBucket(req, res, objeto, 'audio/mpeg');
     }
 
-    const drive = await getDriveClient();
-    const respostaDrive = await drive.files.get(
-      { fileId, alt: 'media' },
-      { responseType: 'arraybuffer' }
-    );
-    const bytes = Buffer.from(respostaDrive.data);
-
-    const range = req.headers.range;
-    const combinacao = range && /^bytes=(\d*)-(\d*)$/.exec(range);
-    if (combinacao && (combinacao[1] || combinacao[2])) {
-      const inicio = combinacao[1] ? parseInt(combinacao[1], 10) : 0;
-      const fim = combinacao[2] ? parseInt(combinacao[2], 10) : bytes.length - 1;
-      res.status(206);
-      res.set('Content-Range', `bytes ${inicio}-${fim}/${bytes.length}`);
-      res.set('Content-Length', String(fim - inicio + 1));
-      res.set('Accept-Ranges', 'bytes');
-      res.set('Content-Type', 'audio/mpeg');
-      res.send(bytes.subarray(inicio, fim + 1));
-    } else {
-      res.set('Content-Length', String(bytes.length));
-      res.set('Accept-Ranges', 'bytes');
-      res.set('Content-Type', 'audio/mpeg');
-      res.send(bytes);
-    }
+    // Primeira vez: baixa do Drive (so audio, ate MAX_BYTES_AUDIO), entrega,
+    // e SO DEPOIS grava no bucket em segundo plano (ver nota do pipe duplo).
+    const arquivo = await baixarDoDrive(fileId, { maxBytes: MAX_BYTES_AUDIO, validar: ehAudio });
+    enviarBuffer(req, res, arquivo.bytes, 'audio/mpeg');
 
     objeto
-      .save(bytes, { contentType: 'audio/mpeg', resumable: false })
+      .save(arquivo.bytes, { contentType: 'audio/mpeg', resumable: false })
       .catch((erroGravacao) => {
         console.error(`Erro ao gravar cache de mídia (${fileId}):`, erroGravacao);
       });
   } catch (erro) {
+    const status = statusDoErro(erro);
     console.error(`Erro ao enviar mídia ${fileId}:`, erro);
-    registrarAlerta('/midia', `${fileId}: ${(erro && erro.message) || erro}`);
+    if (status === 502) registrarAlerta('/midia', `${fileId}: ${(erro && erro.message) || erro}`);
     if (!res.headersSent) {
-      res.status(502).json({ erro: 'Falha ao carregar a faixa.' });
+      const mensagem = erro && erro.httpStatus ? erro.message : status === 404 ? 'Faixa não encontrada.' : 'Falha ao carregar a faixa.';
+      res.status(status).json({ erro: mensagem });
+    }
+  }
+}
+
+/**
+ * Capa (imagem) servida pelo backend -- o app e as paginas deixam de
+ * buscar direto no Drive, o que permite deixar a pasta restrita. So
+ * entrega arquivos de IMAGEM (ate MAX_BYTES_CAPA); guarda uma copia
+ * privada no bucket (capas/<fileId>) pra nao reler do Drive toda vez.
+ */
+async function enviarCapa(req, res, fileId) {
+  if (!/^[a-zA-Z0-9_-]+$/.test(fileId || '')) {
+    return res.status(400).json({ erro: 'fileId inválido.' });
+  }
+  // Libera o uso por <img>/Flutter Web de outra origem (helmet poe
+  // Cross-Origin-Resource-Policy: same-origin por padrao).
+  res.set('Access-Control-Allow-Origin', '*');
+  res.set('Cross-Origin-Resource-Policy', 'cross-origin');
+  res.set('Cache-Control', 'private, max-age=86400');
+
+  const objeto = MIDIA_BUCKET ? getStorage().bucket(MIDIA_BUCKET).file(`capas/${fileId}`) : null;
+  try {
+    if (objeto) {
+      try {
+        const [guardada] = await objeto.download(); // 1 operacao: hit devolve os bytes, miss da 404
+        return enviarBuffer(req, res, guardada, tipoDaImagem(guardada));
+      } catch (erroBucket) {
+        if (!erroBucket || erroBucket.code !== 404) throw erroBucket;
+      }
+    }
+    const arquivo = await baixarDoDrive(fileId, { maxBytes: MAX_BYTES_CAPA, validar: ehImagem });
+    enviarBuffer(req, res, arquivo.bytes, arquivo.mimeType);
+    if (objeto) {
+      objeto
+        .save(arquivo.bytes, { contentType: arquivo.mimeType, resumable: false })
+        .catch((erroGravacao) => {
+          console.error(`Erro ao gravar cache de capa (${fileId}):`, erroGravacao);
+        });
+    }
+  } catch (erro) {
+    const status = statusDoErro(erro);
+    console.error(`Erro ao enviar capa ${fileId}:`, erro);
+    if (status === 502) registrarAlerta('/capa', `${fileId}: ${(erro && erro.message) || erro}`);
+    if (!res.headersSent) {
+      res.status(status).json({ erro: erro && erro.httpStatus ? erro.message : 'Capa indisponível.' });
     }
   }
 }
 
 app.get('/midia/:fileId', limiteMidia, exigirAppIdLiberado, async (req, res) => {
   await enviarMidia(req, res, req.params.fileId);
+});
+
+/** Capa de álbum/playlist pro app e pra /minhaplaylist (exige App_ID liberado). */
+app.get('/capa/:fileId', limiteCapa, exigirAppIdLiberado, async (req, res) => {
+  await enviarCapa(req, res, req.params.fileId);
 });
 
 /**
@@ -498,7 +678,7 @@ async function listarFilhos(drive, pastaId) {
 let gerandoCache = false;
 
 app.get('/gerar-cache', limiteGerarCache, async (req, res) => {
-  if (GERAR_CACHE_CHAVE && req.query.chave !== GERAR_CACHE_CHAVE) {
+  if (!chavesIguais(req.query.chave, GERAR_CACHE_CHAVE)) {
     return res.status(403).json({ erro: 'Chave ausente ou incorreta.' });
   }
   if (gerandoCache) {
@@ -1277,12 +1457,8 @@ app.put('/api/admin/playlists/:id/usuarios', limitePainel, async (req, res) => {
  * /api/admin/novidades (só precisa da lista de álbuns).
  */
 async function obterCacheCompleto() {
-  const url =
-    `https://www.googleapis.com/drive/v3/files/${CACHE_FILE_ID}` +
-    `?alt=media&key=${DRIVE_API_KEY}`;
-  const resposta = await fetch(url);
-  if (!resposta.ok) throw new Error(`Drive respondeu HTTP ${resposta.status}`);
-  return resposta.json();
+  const { bytes } = await baixarDoDrive(CACHE_FILE_ID);
+  return JSON.parse(bytes.toString('utf8'));
 }
 
 /**
@@ -1311,6 +1487,12 @@ app.get('/api/admin/cache', limitePainel, async (req, res) => {
 app.get('/api/admin/midia/:fileId', limiteMidia, async (req, res) => {
   if (!chavePainelValida(req)) return res.status(403).json({ erro: 'Chave ausente ou incorreta.' });
   await enviarMidia(req, res, req.params.fileId);
+});
+
+/** Capa pra página de curadoria (a tag <img> não manda headers, então aceita ?chave=X como o preview de áudio). */
+app.get('/api/admin/capa/:fileId', limiteCapa, async (req, res) => {
+  if (!chavePainelValida(req)) return res.status(403).json({ erro: 'Chave ausente ou incorreta.' });
+  await enviarCapa(req, res, req.params.fileId);
 });
 
 app.get('/api/admin/novidades', limitePainel, async (req, res) => {

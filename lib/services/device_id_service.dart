@@ -23,6 +23,12 @@ class DeviceIdService {
   // reler o SharedPreferences toda vez que algum serviço pede o appId.
   static String? _cache;
 
+  /// App_ID já carregado em memória, de forma SÍNCRONA -- usado pra montar
+  /// URLs de capa dentro de build() (que não pode esperar um Future).
+  /// Vazio só antes da primeira chamada a getOrCreateDeviceId(), que a
+  /// tela de validação já faz antes de qualquer capa aparecer.
+  static String get idEmCache => _cache ?? '';
+
   static String _gerarCodigo() {
     final random = Random.secure();
     return List.generate(

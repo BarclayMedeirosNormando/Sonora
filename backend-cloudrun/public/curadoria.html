@@ -342,7 +342,7 @@
   const fmt = (n) => Number(n || 0).toLocaleString('pt-BR');
   const plural = (n, um, varios) => `${fmt(n)} ${n === 1 ? um : varios}`;
   const hue = (seed) => { let h = 7; for (const c of String(seed || '')) h = (h * 31 + c.charCodeAt(0)) & 0x7fffffff; return h % 360; };
-  const thumb = (id, sz) => `https://drive.google.com/thumbnail?id=${encodeURIComponent(id)}&sz=w${sz}`;
+  const thumb = (id, sz) => `/api/admin/capa/${encodeURIComponent(id)}?chave=${encodeURIComponent(CHAVE)}`;
   const capa = (capaId, classe, seed, sz = 128) =>
     `<span class="capa ${classe}" style="--h:${hue(seed)}"><i>♪</i>${capaId ? `<img loading="lazy" alt="" src="${thumb(capaId, sz)}">` : ''}</span>`;
   // <img> não propaga "error" — captura na fase de captura pra esconder capa quebrada.

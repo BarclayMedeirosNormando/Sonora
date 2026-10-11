@@ -56,9 +56,9 @@ class Track {
   }
 
   /// URL da capa (herdada da playlist curada), ou null se não tiver.
-  String? capaUrl(String apiKey) {
+  String? capaUrl(String cloudRunBaseUrl, String appId) {
     if (capaId == null) return null;
-    return 'https://www.googleapis.com/drive/v3/files/$capaId?alt=media&key=$apiKey';
+    return '$cloudRunBaseUrl/capa/$capaId?appId=${Uri.encodeQueryComponent(appId)}';
   }
 
   /// URL de streaming via o proxy de mídia no Cloud Run (não mais direto

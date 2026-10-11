@@ -65,7 +65,7 @@ nada precisa ser desfeito.
      --timeout 3600 `
      --memory 1Gi `
      --service-account sonora-backend@sonora-506315.iam.gserviceaccount.com `
-     --set-env-vars PLANILHA_ID=1UyH7VLTSU3pIRXH1DOiPSBB1vavy_qyRo65y07DEyiE,ABA_NOME=Página1,CACHE_FILE_ID=1Ks8PvbUfQqg75lHty2qb9bnoIvt7c4pP,DRIVE_API_KEY=AIzaSyA8gpiXcOLxKjGSVXuO_iF5NQRnKHwLwno,PASTA_BIBLIOTECA_ID=14D3JK1VVyL3nyDNroK0s2vSLMC0H16I6,GERAR_CACHE_CHAVE=escolha-uma-senha-aqui
+     --set-env-vars PLANILHA_ID=1UyH7VLTSU3pIRXH1DOiPSBB1vavy_qyRo65y07DEyiE,ABA_NOME=Página1,CACHE_FILE_ID=1Ks8PvbUfQqg75lHty2qb9bnoIvt7c4pP,PASTA_BIBLIOTECA_ID=14D3JK1VVyL3nyDNroK0s2vSLMC0H16I6,GERAR_CACHE_CHAVE=escolha-uma-senha-aqui
    ```
 
    (No PowerShell/Windows, o `` ` `` no fim da linha continua o comando na
@@ -152,7 +152,7 @@ Passos extras (além dos 1-8 acima) pra colocar isso no ar:
       --timeout 3600 `
       --memory 1Gi `
       --service-account sonora-backend@sonora-506315.iam.gserviceaccount.com `
-      --set-env-vars "PLANILHA_ID=1UyH7VLTSU3pIRXH1DOiPSBB1vavy_qyRo65y07DEyiE,ABA_NOME=Untitled,CACHE_FILE_ID=1Ks8PvbUfQqg75lHty2qb9bnoIvt7c4pP,DRIVE_API_KEY=AIzaSyA8gpiXcOLxKjGSVXuO_iF5NQRnKHwLwno,PASTA_BIBLIOTECA_ID=14D3JK1VVyL3nyDNroK0s2vSLMC0H16I6,GERAR_CACHE_CHAVE=sonora2026xyz,PAINEL_CHAVE=escolha-outra-senha-aqui"
+      --set-env-vars "PLANILHA_ID=1UyH7VLTSU3pIRXH1DOiPSBB1vavy_qyRo65y07DEyiE,ABA_NOME=Untitled,CACHE_FILE_ID=1Ks8PvbUfQqg75lHty2qb9bnoIvt7c4pP,PASTA_BIBLIOTECA_ID=14D3JK1VVyL3nyDNroK0s2vSLMC0H16I6,GERAR_CACHE_CHAVE=<SUA_SENHA_LONGA>,PAINEL_CHAVE=escolha-outra-senha-aqui"
     ```
 
 13. **Abrir o painel**: `<URL>/painel?chave=SUA_PAINEL_CHAVE`. Na primeira
@@ -223,7 +223,7 @@ de 1 por play.
      --timeout 3600 `
      --memory 1Gi `
      --service-account sonora-backend@sonora-506315.iam.gserviceaccount.com `
-     --set-env-vars "PLANILHA_ID=1UyH7VLTSU3pIRXH1DOiPSBB1vavy_qyRo65y07DEyiE,ABA_NOME=Untitled,CACHE_FILE_ID=1Ks8PvbUfQqg75lHty2qb9bnoIvt7c4pP,DRIVE_API_KEY=AIzaSyA8gpiXcOLxKjGSVXuO_iF5NQRnKHwLwno,PASTA_BIBLIOTECA_ID=14D3JK1VVyL3nyDNroK0s2vSLMC0H16I6,GERAR_CACHE_CHAVE=sonora2026xyz,PAINEL_CHAVE=escolha-outra-senha-aqui,MIDIA_BUCKET=sonora-midia-cache"
+     --set-env-vars "PLANILHA_ID=1UyH7VLTSU3pIRXH1DOiPSBB1vavy_qyRo65y07DEyiE,ABA_NOME=Untitled,CACHE_FILE_ID=1Ks8PvbUfQqg75lHty2qb9bnoIvt7c4pP,PASTA_BIBLIOTECA_ID=14D3JK1VVyL3nyDNroK0s2vSLMC0H16I6,GERAR_CACHE_CHAVE=<SUA_SENHA_LONGA>,PAINEL_CHAVE=escolha-outra-senha-aqui,MIDIA_BUCKET=sonora-midia-cache"
    ```
 
 ### Como testar
@@ -309,8 +309,8 @@ reforçado mesmo assim:
 - Testado: música tocando normal pela URL pública depois do ajuste.
 
 **`driveApiKey` restrita (31/08/2026)** — a chave hardcoded em
-`lib/core/constants.dart` (`AIzaSyA8gp...`, também usada como
-`DRIVE_API_KEY` no Cloud Run) foi restrita no Console/`gcloud` só à
+`lib/core/constants.dart` (também usada como
+`DRIVE_API_KEY` no Cloud Run — REMOVIDA em 10/10/2026, ver a última seção) foi restrita no Console/`gcloud` só à
 Drive API (`gcloud services api-keys update KEY --api-target=service=drive.googleapis.com`,
 confirmado via `--format="yaml(restrictions)"`). Não dava pra restringir
 por app Android nem por IP/referrer — a mesma chave é usada tanto pelo
@@ -323,3 +323,80 @@ gate de appId em `/cache`/`/midia`, rate limiting, chave do painel por
 header, confirmação em `/api/zerar-plays`, listagem pública do bucket
 (alarme falso, reforçado do mesmo jeito) e restrição da `driveApiKey`
 — estão todos implementados e validados em produção.
+
+## Acesso às músicas só com App_ID liberado (10/10/2026)
+
+**Por que mudou.** Até aqui o gate de App_ID protegia só o `/midia` e o
+`/cache`. Por fora dele, a pasta do Drive estava como "qualquer pessoa com
+o link" e a chave de API (no código e no APK) deixava listar/baixar tudo
+direto do Google, e os objetos do bucket eram públicos por ACL. Agora:
+
+- O servidor lê o Drive **pela conta de serviço** (`baixarDoDrive`). Nenhuma
+  chave de API existe mais — nem no código, nem no APK, nem em env var.
+- `GET /capa/:fileId?appId=X` (App_ID liberado) e
+  `GET /api/admin/capa/:fileId?chave=X` (curadoria) entregam as capas. Só
+  servem arquivos de imagem (até 10 MB) e guardam cópia privada em
+  `capas/<fileId>` no bucket. O app e as páginas `/minhaplaylist` e
+  `/criar` deixaram de buscar capa direto no Drive/`drive.google.com`.
+- `/midia` passou a redirecionar (302) pra uma **URL assinada de 30 min** do
+  bucket, em vez da URL pública. Se a assinatura falhar, cai pro proxy
+  (entrega os bytes pelo servidor) e grava um alerta no painel — a música
+  não para, só fica mais cara/lenta até o papel abaixo ser concedido.
+- `/midia` só baixa do Drive arquivos de áudio (até 100 MB); `/validar` só
+  aceita App_ID com formato válido (4–64 letras/números/hífen).
+- `PAINEL_CHAVE` e `GERAR_CACHE_CHAVE` agora **falham fechadas**: se a
+  variável não estiver configurada, o acesso é NEGADO (antes, vazia = aberto).
+  A comparação é em tempo constante.
+
+### Passo a passo (nesta ordem — cada passo tem teste e dá pra parar ali)
+
+Nomes usados: projeto `sonora-506315`, serviço `sonora-backend`, região
+`us-central1`, bucket `sonora-midia-cache`. **No PowerShell, valor de flag
+com vírgula sempre entre aspas duplas.** Confirme a conta de serviço do
+Cloud Run (aqui chamada `SA`) com:
+`gcloud run services describe sonora-backend --region us-central1 --format="value(spec.template.spec.serviceAccountName)"`
+
+0. **Troque a senha do `/gerar-cache` agora** (a antiga estava neste README
+   público). Use `--update-env-vars`, **nunca `--set-env-vars`** (esse
+   apaga todas as outras variáveis — foi assim que o painel já ficou sem
+   chave): `gcloud run services update sonora-backend --region us-central1 --update-env-vars "GERAR_CACHE_CHAVE=<NOVA_SENHA_LONGA>"`
+1. **Deploy do backend novo**, dentro de `backend-cloudrun/`:
+   `gcloud run deploy sonora-backend --source . --region us-central1`
+   (sem `--set-env-vars`). Teste: o app toca música e carrega capas; o
+   `/painel` e o `/criar` abrem com a chave.
+2. **Permitir assinar URLs**: `gcloud services enable iamcredentials.googleapis.com`
+   e `gcloud iam service-accounts add-iam-policy-binding SA --member="serviceAccount:SA" --role="roles/iam.serviceAccountTokenCreator"`.
+   Teste: `/midia/ID?appId=SEU_ID` de uma faixa já em cache responde 302 pra
+   uma URL com `X-Goog-Signature`. Se o painel mostrar o alerta "Falha ao
+   assinar URL", o papel ainda não propagou (espere alguns minutos).
+3. **Fechar o bucket** (só depois do passo 2 funcionar):
+   `gcloud storage buckets update gs://sonora-midia-cache --predefined-default-object-acl=private`
+   `gcloud storage objects update "gs://sonora-midia-cache/**" --predefined-acl=private`
+   `gcloud storage buckets update gs://sonora-midia-cache --public-access-prevention`
+   (como da outra vez, o segundo comando pode exigir `roles/storage.admin`
+   temporário pra você, porque os objetos pertencem à conta de serviço.)
+   Teste: a URL pública antiga de um objeto agora dá 403 e a música continua
+   tocando pelo app.
+4. **Publicar o app novo** (versão com as capas pelo `/capa`) e instalar
+   nos clientes. Aparelhos com o app antigo continuam tocando, mas as
+   **capas somem** depois do passo 5.
+5. **Fechar o Drive**: na pasta `Sonora` (e na pasta-mãe `Musicas`), em
+   Compartilhar > Acesso geral, trocar para **Restrito**; confirmar que a
+   conta de serviço continua como Editora. Teste: o app, `/minhaplaylist` e
+   `/criar` continuam mostrando capas e tocando; uma listagem anônima do
+   Drive com a chave antiga passa a falhar.
+6. **Revogar a chave antiga** no Console (APIs e serviços > Credenciais) e
+   remover a variável: `gcloud run services update sonora-backend --region us-central1 --remove-env-vars DRIVE_API_KEY`.
+   O histórico do Git ainda tem a chave: por isso ela precisa ser revogada,
+   não só apagada do código.
+
+### O que continua em aberto (de propósito, ficou pra depois)
+
+- O App_ID tem 6 caracteres (~1 bilhão de combinações) e vai na URL
+  (`?appId=`). Dá pra adivinhar por força bruta lentamente e ele aparece
+  nos logs. A correção é um segredo longo por aparelho, emitido pelo
+  servidor quando o ID for liberado.
+- O App_ID não é preso ao aparelho: quem copiar um ID liberado usa o acesso.
+- O `/criar` (curadoria) é a página do **administrador**: quem entra com a
+  `PAINEL_CHAVE` pode liberar IDs, zerar plays e editar qualquer playlist.
+  Cliente deve usar só o `/minhaplaylist` (é o que o botão do app abre).

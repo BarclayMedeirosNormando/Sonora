@@ -249,7 +249,7 @@ class _CabecalhoPlaylist extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final capaUrl = playlist.capaUrl(AppConstants.driveApiKey);
+    final capaUrl = playlist.capaUrl(AppConstants.cloudRunBaseUrl, DeviceIdService.idEmCache);
     final capaPadrao = CapaPlaceholder(semente: playlist.nome, tamanhoIcone: 56);
     final total = playlist.faixas.length;
 
@@ -484,7 +484,7 @@ class _FaixaPlaylistTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final capaUrl = faixa.capaUrl(AppConstants.driveApiKey);
+    final capaUrl = faixa.capaUrl(AppConstants.cloudRunBaseUrl, DeviceIdService.idEmCache);
 
     return ListTile(
       leading: ClipRRect(

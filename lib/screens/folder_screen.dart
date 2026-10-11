@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../core/constants.dart';
+import '../services/device_id_service.dart';
 import '../core/theme.dart';
 import '../models/album.dart';
 import '../models/pasta_conteudo.dart';
@@ -214,7 +215,7 @@ class _PastaCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final capaUrl = pasta.capaUrl(AppConstants.driveApiKey);
+    final capaUrl = pasta.capaUrl(AppConstants.cloudRunBaseUrl, DeviceIdService.idEmCache);
     final ehFavorito = context.watch<FavoritosService>().ehFavorito(pasta.id);
 
     return InkWell(

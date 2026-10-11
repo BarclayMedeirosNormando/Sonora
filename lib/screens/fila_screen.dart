@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../core/constants.dart';
+import '../services/device_id_service.dart';
 import '../core/theme.dart';
 import '../services/player_service.dart';
 
@@ -34,7 +35,7 @@ class FilaScreen extends StatelessWidget {
             itemBuilder: (context, index) {
               final track = fila[index];
               final tocandoAgora = index == player.indiceAtual;
-              final capaUrl = track.capaUrl(AppConstants.driveApiKey);
+              final capaUrl = track.capaUrl(AppConstants.cloudRunBaseUrl, DeviceIdService.idEmCache);
 
               return ListTile(
                 key: ValueKey('${track.id}_$index'),

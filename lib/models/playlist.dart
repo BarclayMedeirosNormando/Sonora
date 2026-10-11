@@ -45,9 +45,9 @@ class PlaylistFaixa {
 
   /// URL da capa do álbum de origem (herdada na hora em que a faixa foi
   /// adicionada à playlist na curadoria), ou null se não tiver.
-  String? capaUrl(String apiKey) {
+  String? capaUrl(String cloudRunBaseUrl, String appId) {
     if (capaId == null) return null;
-    return 'https://www.googleapis.com/drive/v3/files/$capaId?alt=media&key=$apiKey';
+    return '$cloudRunBaseUrl/capa/$capaId?appId=${Uri.encodeQueryComponent(appId)}';
   }
 }
 
@@ -77,9 +77,9 @@ class PlaylistResumo {
 
   /// URL da capa (definida pela primeira faixa adicionada na curadoria),
   /// ou null se a playlist ainda não tiver nenhuma faixa.
-  String? capaUrl(String apiKey) {
+  String? capaUrl(String cloudRunBaseUrl, String appId) {
     if (capaId == null) return null;
-    return 'https://www.googleapis.com/drive/v3/files/$capaId?alt=media&key=$apiKey';
+    return '$cloudRunBaseUrl/capa/$capaId?appId=${Uri.encodeQueryComponent(appId)}';
   }
 }
 
@@ -108,8 +108,8 @@ class Playlist {
     );
   }
 
-  String? capaUrl(String apiKey) {
+  String? capaUrl(String cloudRunBaseUrl, String appId) {
     if (capaId == null) return null;
-    return 'https://www.googleapis.com/drive/v3/files/$capaId?alt=media&key=$apiKey';
+    return '$cloudRunBaseUrl/capa/$capaId?appId=${Uri.encodeQueryComponent(appId)}';
   }
 }

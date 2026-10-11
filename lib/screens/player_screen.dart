@@ -7,6 +7,7 @@ import 'package:just_audio/just_audio.dart';
 import 'package:provider/provider.dart';
 
 import '../core/constants.dart';
+import '../services/device_id_service.dart';
 import '../core/theme.dart';
 import '../services/player_service.dart';
 import 'fila_screen.dart';
@@ -92,7 +93,7 @@ class PlayerScreen extends StatelessWidget {
             );
           }
 
-          final capaUrl = faixa.capaUrl(AppConstants.driveApiKey);
+          final capaUrl = faixa.capaUrl(AppConstants.cloudRunBaseUrl, DeviceIdService.idEmCache);
           const placeholder = Center(
             child: Icon(Icons.album, size: 96, color: AppTheme.textSecondary),
           );

@@ -327,7 +327,7 @@ class _ContinuarOuvindo extends StatelessWidget {
     final faixa = player.faixaAtual;
     if (faixa == null) return const SizedBox.shrink();
 
-    final capaUrl = faixa.capaUrl(AppConstants.driveApiKey);
+    final capaUrl = faixa.capaUrl(AppConstants.cloudRunBaseUrl, DeviceIdService.idEmCache);
     const capaPadrao = CapaPlaceholder(semente: 'sonora', tamanhoIcone: 26);
 
     return Padding(
@@ -553,7 +553,7 @@ class _PlaylistCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final capaUrl = playlist.capaUrl(AppConstants.driveApiKey);
+    final capaUrl = playlist.capaUrl(AppConstants.cloudRunBaseUrl, DeviceIdService.idEmCache);
     final novidade = this.novidade;
     final offline = context.watch<OfflinePlaylistService>();
     final offlineAtivo = offline.estaAtiva(playlist.id);

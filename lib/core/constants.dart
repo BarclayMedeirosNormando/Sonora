@@ -25,12 +25,6 @@ class AppConstants {
   /// no primeiro uso do app.
   static const String prefsDeviceIdKey = 'sonora_device_id';
 
-  /// Chave de API do Google Cloud (Google Drive API habilitada) usada pra
-  /// montar as URLs de streaming dos MP3s (files/{id}?alt=media&key=...).
-  /// A pasta de origem já está compartilhada como "qualquer pessoa com o
-  /// link", então essa chave só precisa de acesso de leitura à Drive API.
-  static const String driveApiKey = 'AIzaSyA8gpiXcOLxKjGSVXuO_iF5NQRnKHwLwno';
-
   /// ID do arquivo JSON de cache da biblioteca (gerado pelo script
   /// backend/CacheBiblioteca.gs, função atualizarCacheBiblioteca() —
   /// preencher aqui com o ID que o log dessa função mostrar). Usado pela

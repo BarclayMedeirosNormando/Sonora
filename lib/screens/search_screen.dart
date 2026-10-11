@@ -2,6 +2,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 
 import '../core/constants.dart';
+import '../services/device_id_service.dart';
 import '../core/theme.dart';
 import '../models/album.dart';
 import '../models/track.dart';
@@ -217,7 +218,7 @@ class _ResultadoAlbumTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final capaUrl = album.capaUrl(AppConstants.driveApiKey);
+    final capaUrl = album.capaUrl(AppConstants.cloudRunBaseUrl, DeviceIdService.idEmCache);
 
     return ListTile(
       leading: ClipRRect(

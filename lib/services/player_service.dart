@@ -92,7 +92,7 @@ class PlayerService extends ChangeNotifier with WidgetsBindingObserver {
     // lockscreen etc) — sem artUri a notificação fica com ícone genérico
     // em vez da capa real do álbum, o que faz ela parecer "mais pobre"
     // do que apps tipo YouTube Music/Spotify.
-    final capaUrl = track.capaUrl(AppConstants.driveApiKey);
+    final capaUrl = track.capaUrl(AppConstants.cloudRunBaseUrl, DeviceIdService.idEmCache);
     final tag = MediaItem(
       id: track.id,
       title: track.displayTitle,
